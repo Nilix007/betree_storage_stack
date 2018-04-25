@@ -1,0 +1,47 @@
+[package]
+name = "betree_storage_stack"
+version = "0.1.0"
+authors = ["Felix Wiedemann <felix@kann.it>"]
+license = "MIT OR Apache-2.0"
+
+[lib]
+crate-type = ["rlib", "staticlib", "cdylib"]
+
+[profile.test]
+opt-level = 2
+
+[profile.release]
+debug = true
+
+[dependencies]
+futures = "0.1"
+futures-cpupool = "0.1"
+serde = "1.0"
+serde_derive = "1.0"
+bincode = "1.0"
+error-chain = "0.11"
+libc = "0.2"
+parking_lot = "0.5"
+owning_ref = "0.3"
+log = "0.4"
+byteorder = "1.0"
+lz4 = "1.21"
+seqlock = { path = "seqlock/" }
+rental = "0.4"
+twox-hash = "1.1"
+stable_deref_trait = "1.0"
+unbytify = "0.2"
+toml = "0.4"
+itertools = "0.7"
+ref_slice = "1.1"
+env_logger = "0.5"
+scoped_threadpool = "0.1"
+indicatif = "0.9"
+
+clippy = {version = "*", optional = true}
+
+[dev-dependencies]
+rand = "0.4"
+quickcheck = "0.6"
+quickcheck_macros = "0.6"
+clap = "2.26"
