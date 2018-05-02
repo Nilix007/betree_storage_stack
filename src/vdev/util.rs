@@ -1,6 +1,6 @@
-use futures::future::{join_all, Future, JoinAll, Then};
-use futures::{Async, Poll};
-use std::ops::{Generator, GeneratorState};
+use futures::future::{join_all, JoinAll, Then};
+use futures::prelude::*;
+use futures::task::Context;
 
 type WrapUnfailableResultFn<T> = fn(T) -> Result<T, !>;
 pub type UnfailableFuture<F> = Then<
@@ -20,7 +20,7 @@ impl<F: Future> UnfailableFutureExt for F {
 }
 
 pub struct UnfailableJoinAll<F: Future, G: Failed> {
-    future: JoinAll<Vec<UnfailableFuture<F>>>,
+    future: JoinAll<UnfailableFuture<F>>,
     fail: Option<G>,
 }
 
@@ -37,9 +37,9 @@ impl<F: Future<Item = ()>, G: Failed> Future for UnfailableJoinAll<F, G> {
     type Item = ();
     type Error = F::Error;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let results = match self.future.poll() {
-            Ok(Async::NotReady) => return Ok(Async::NotReady),
+    fn poll(&mut self, cx: &mut Context) -> Poll<Self::Item, Self::Error> {
+        let results = match self.future.poll(cx) {
+            Ok(Async::Pending) => return Ok(Async::Pending),
             Ok(Async::Ready(results)) => results,
         };
         for result in results {
@@ -53,7 +53,7 @@ impl<F: Future<Item = ()>, G: Failed> Future for UnfailableJoinAll<F, G> {
 }
 
 pub struct UnfailableJoinAllPlusOne<F: Future, G: Failed> {
-    future: JoinAll<Vec<UnfailableFuture<F>>>,
+    future: JoinAll<UnfailableFuture<F>>,
     fail: Option<G>,
 }
 
@@ -70,9 +70,9 @@ impl<F: Future<Item = ()>, G: Failed> Future for UnfailableJoinAllPlusOne<F, G> 
     type Item = ();
     type Error = F::Error;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        let results = match self.future.poll() {
-            Ok(Async::NotReady) => return Ok(Async::NotReady),
+    fn poll(&mut self, cx: &mut Context) -> Poll<Self::Item, Self::Error> {
+        let results = match self.future.poll(cx) {
+            Ok(Async::Pending) => return Ok(Async::Pending),
             Ok(Async::Ready(results)) => results,
         };
         let mut error_occurred = false;
@@ -92,42 +92,6 @@ impl<F: Future<Item = ()>, G: Failed> Future for UnfailableJoinAllPlusOne<F, G> 
 
 pub trait Failed {
     fn failed(self);
-}
-
-// TODO immovable generator!
-pub struct GeneratorFuture<T>(T);
-
-impl<T> GeneratorFuture<T> {
-    pub fn new(g: T) -> Self {
-        GeneratorFuture(g)
-    }
-}
-
-impl<G, T, E> Future for GeneratorFuture<G>
-where
-    G: Generator<Yield = (), Return = Result<T, E>>,
-{
-    type Item = T;
-    type Error = E;
-
-    fn poll(&mut self) -> Poll<T, E> {
-        match unsafe { self.0.resume() } {
-            GeneratorState::Yielded(()) => Ok(Async::NotReady),
-            GeneratorState::Complete(r) => r.map(Async::Ready),
-        }
-    }
-}
-
-macro_rules! await {
-    ($e:expr) => {{
-        let mut f = $e;
-        loop {
-            if let $crate::futures::Async::Ready(t) = f.poll()? {
-                break t;
-            }
-            yield ();
-        }
-    }};
 }
 
 pub fn alloc_uninitialized(size: usize) -> Box<[u8]> {

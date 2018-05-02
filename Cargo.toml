@@ -14,8 +14,7 @@ opt-level = 2
 debug = true
 
 [dependencies]
-futures = "0.1"
-futures-cpupool = "0.1"
+futures = {version = "0.2", features = ["nightly"]}
 serde = "1.0"
 serde_derive = "1.0"
 bincode = "1.0"

@@ -4,7 +4,9 @@ use allocator::{Action, SegmentAllocator, SegmentId};
 use cache::{AddSize, Cache, ChangeKeyError, RemoveError};
 use checksum::{Builder, Checksum, State};
 use compression::{Compress, Compression};
-use futures::{Future, Poll};
+use futures::executor::block_on;
+use futures::prelude::*;
+use futures::task::Context;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use serde::de::DeserializeOwned;
 use serde::ser::Error as SerError;
@@ -817,7 +819,7 @@ where
     }
 
     fn finish_prefetch(&self, p: Self::Prefetch) -> Result<(), Error> {
-        let (ptr, compressed_data) = p.wait()?;
+        let (ptr, compressed_data) = block_on(p)?;
         let object: H::Object = {
             let data = ptr.compression
                 .decompress(compressed_data)
@@ -938,7 +940,7 @@ impl<I> Future for PrefetchFuture<I> {
     type Item = ();
     type Error = Error;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        self.rent_mut(|f| f.poll())
+    fn poll(&mut self, cx: &mut Context) -> Poll<Self::Item, Self::Error> {
+        self.rent_mut(|f| f.poll(cx))
     }
 }

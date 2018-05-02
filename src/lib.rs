@@ -8,6 +8,8 @@
 #![feature(specialization)]
 #![feature(ptr_internals)]
 #![feature(never_type)]
+#![feature(pin)]
+#![feature(proc_macro_non_items)]
 #![cfg_attr(any(test, feature = "clippy"), feature(plugin))]
 #![cfg_attr(feature = "clippy", plugin(clippy))]
 #![cfg_attr(test, plugin(quickcheck_macros))]
@@ -19,7 +21,6 @@ extern crate core;
 #[macro_use]
 extern crate error_chain;
 extern crate futures;
-extern crate futures_cpupool;
 extern crate itertools;
 extern crate libc;
 #[macro_use]

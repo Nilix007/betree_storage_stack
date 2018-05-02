@@ -3,6 +3,7 @@
 //! ordering.
 
 use checksum::Checksum;
+use futures::executor::block_on;
 use futures::Future;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -31,8 +32,7 @@ pub trait StoragePoolLayer: Clone + Send + Sync + 'static {
         offset: DiskOffset,
         checksum: Self::Checksum,
     ) -> Result<Box<[u8]>, VdevError> {
-        self.read_async(size, offset, checksum)
-            .and_then(Future::wait)
+        block_on(self.read_async(size, offset, checksum)?)
     }
 
     /// Future returned by `read_async`.

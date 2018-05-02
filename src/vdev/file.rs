@@ -3,7 +3,8 @@ use super::util::alloc_uninitialized;
 use super::{AtomicStatistics, Block, ScrubResult, Statistics, Vdev, VdevLeafRead, VdevLeafWrite,
             VdevRead};
 use checksum::Checksum;
-use futures::{lazy, Future};
+use futures::future::lazy;
+use futures::prelude::*;
 use libc::{c_ulong, ioctl};
 use std::fs;
 use std::io;
@@ -73,7 +74,7 @@ impl<C: Checksum> VdevRead<C> for File {
             .read
             .fetch_add(size.as_u64(), Ordering::Relaxed);
         let inner = Arc::clone(&self.inner);
-        Box::new(lazy(move || {
+        Box::new(lazy(move |_| {
             let size_in_bytes = size.to_bytes() as usize;
             let mut buf = alloc_uninitialized(size_in_bytes);
             match inner.file.read_exact_at(&mut buf, offset.to_bytes()) {
@@ -119,7 +120,7 @@ impl<C: Checksum> VdevRead<C> for File {
             .read
             .fetch_add(size.as_u64(), Ordering::Relaxed);
         let inner = Arc::clone(&self.inner);
-        Box::new(lazy(move || {
+        Box::new(lazy(move |_| {
             let size_in_bytes = size.to_bytes() as usize;
             let mut buf = alloc_uninitialized(size_in_bytes);
             match inner.file.read_exact_at(&mut buf, offset.to_bytes()) {
@@ -175,7 +176,7 @@ impl<T: AsMut<[u8]> + Send + 'static> VdevLeafRead<T> for File {
             .read
             .fetch_add(size.as_u64(), Ordering::Relaxed);
         let inner = Arc::clone(&self.inner);
-        Box::new(lazy(move || {
+        Box::new(lazy(move |_| {
             match inner.file.read_exact_at(buf.as_mut(), offset.to_bytes()) {
                 Ok(()) => Ok(buf),
                 Err(e) => {
@@ -212,7 +213,7 @@ impl VdevLeafWrite for File {
             .written
             .fetch_add(block_cnt, Ordering::Relaxed);
         let inner = Arc::clone(&self.inner);
-        Box::new(lazy(move || {
+        Box::new(lazy(move |_| {
             match inner
                 .file
                 .write_all_at(data.as_ref(), offset.to_bytes())

@@ -2,7 +2,9 @@ use super::{AtomicStatistics, Block, Error, ErrorKind, ScrubResult, Statistics, 
             VdevLeafRead, VdevLeafWrite, VdevRead, VdevWrite};
 use checksum::Checksum;
 use checksum::{Builder, State, XxHash, XxHashBuilder};
-use futures::future::{result, Future, FutureResult, Map};
+use futures::executor::block_on;
+use futures::future::{result, FutureResult, Map};
+use futures::prelude::*;
 use parking_lot::Mutex;
 use quickcheck::{Arbitrary, Gen};
 use rand::{Rng, SeedableRng, XorShiftRng};
@@ -308,9 +310,7 @@ pub fn test_writes_are_persistent<V: Vdev + VdevRead<XxHash> + VdevWrite>(
         };
         checksums.insert(idx, checksum);
 
-        vdev.write(data.clone(), offset)
-            .wait()
-            .expect("Write failed");
+        block_on(vdev.write(data.clone(), offset)).expect("Write failed");
     }
     for (idx, &(offset, size)) in writes.iter().enumerate() {
         let size = Block(size as u32);
@@ -323,9 +323,7 @@ pub fn test_writes_are_persistent<V: Vdev + VdevRead<XxHash> + VdevWrite>(
         }
         let offset = Block(offset as u64);
         let checksum = checksums[&idx];
-        let data = vdev.read(size, offset, checksum)
-            .wait()
-            .expect("Read failed");
+        let data = block_on(vdev.read(size, offset, checksum)).expect("Read failed");
         let gen_data = generate_data(idx, offset, size);
         assert!(checksum.verify(&data).is_ok());
         assert!(checksum.verify(&gen_data).is_ok());

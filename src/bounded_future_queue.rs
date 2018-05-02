@@ -1,8 +1,10 @@
 //! This module provides a bounded queue of futures which are identified by a
 //! key.
 
+use futures::executor::block_on;
+use futures::prelude::*;
 use futures::stream::FuturesUnordered;
-use futures::Stream;
+use futures::task::Context;
 use futures::{Async, Future, IntoFuture, Poll};
 use std::borrow::Borrow;
 use std::collections::HashSet;
@@ -20,9 +22,9 @@ where
     type Item = K;
     type Error = F::Error;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self.future.poll() {
-            Ok(Async::NotReady) => Ok(Async::NotReady),
+    fn poll(&mut self, cx: &mut Context) -> Poll<Self::Item, Self::Error> {
+        match self.future.poll(cx) {
+            Ok(Async::Pending) => Ok(Async::Pending),
             Ok(Async::Ready(())) => Ok(Async::Ready(self.key.take().unwrap())),
             Err(e) => Err(e),
         }
@@ -92,13 +94,13 @@ impl<K: Eq + Hash, F: Future<Item = ()>> BoundedFutureQueue<K, F> {
     /// Waits for the given `key`.
     /// May flush the whole queue if a future returned an error beforehand.
     pub fn wait(&mut self, key: &K) -> Result<(), F::Error> {
-        self.wait_async(key).wait()
+        block_on(self.wait_async(key))
     }
 
     /// Flushes the queue.
     pub fn flush(&mut self) -> Result<(), F::Error> {
         self.map.clear();
-        self.queue.by_ref().map(|_| ()).collect().wait().map(|_| ())
+        block_on(self.queue.by_ref().map(|_| ()).collect::<Vec<_>>()).map(|_| ())
     }
 
     /// Returns true iff the queue's size is at the limit.
@@ -109,8 +111,7 @@ impl<K: Eq + Hash, F: Future<Item = ()>> BoundedFutureQueue<K, F> {
     fn drain_while_above_limit(&mut self, limit: usize) -> Result<(), F::Error> {
         if self.map.len() > limit {
             let amount = self.map.len() - limit;
-            let result = self.queue.by_ref().take(amount as u64).collect().wait();
-            let keys = result?;
+            let keys: Vec<_> = block_on(self.queue.by_ref().take(amount as u64).collect())?;
             for key in keys {
                 self.map.remove(&key);
             }
@@ -133,5 +134,6 @@ impl<K: Eq + Hash, F: Future<Item = ()>> BoundedFutureQueue<K, F> {
                 map.remove(&key);
                 Ok(())
             })
+            .map(|_| ())
     }
 }
