@@ -7,6 +7,7 @@
 #![feature(generator_trait, generators)]
 #![feature(specialization)]
 #![feature(ptr_internals)]
+#![feature(never_type)]
 #![cfg_attr(any(test, feature = "clippy"), feature(plugin))]
 #![cfg_attr(feature = "clippy", plugin(clippy))]
 #![cfg_attr(test, plugin(quickcheck_macros))]
