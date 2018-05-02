@@ -21,7 +21,7 @@ pub struct File {
 }
 
 struct Inner {
-    file: Arc<fs::File>,
+    file: fs::File,
     pool: CpuPool,
     id: String,
     size: Block<u64>,
@@ -30,12 +30,10 @@ struct Inner {
 
 impl File {
     /// Creates a new `File`.
-    pub fn new<T, U>(file: T, pool: U, id: String) -> Result<Self, io::Error>
+    pub fn new<T>(file: fs::File, pool: T, id: String) -> Result<Self, io::Error>
     where
-        T: Into<Arc<fs::File>>,
-        U: Into<Option<CpuPool>>,
+        T: Into<Option<CpuPool>>,
     {
-        let file = file.into();
         let file_type = file.metadata()?.file_type();
         let size = if file_type.is_file() {
             Block::from_bytes(file.metadata()?.len())
