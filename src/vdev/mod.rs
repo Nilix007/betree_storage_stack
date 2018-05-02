@@ -68,7 +68,7 @@ impl From<ScrubResult> for Box<[u8]> {
 }
 
 /// Trait for reading blocks of data.
-pub trait VdevRead<C: Checksum>: Clone + Send + Sync + 'static {
+pub trait VdevRead<C: Checksum>: Send + Sync + 'static {
     /// The [`Future`](../../futures/future/trait.Future.html) corresponding to
     /// [`read`](trait.VdevRead.html#tymethod.read).
     type Read: Future<Item = Box<[u8]>, Error = Error> + Send + 'static;
@@ -140,7 +140,7 @@ pub trait Vdev: Send + Sync + 'static {
     /// Turns self into a trait object.
     fn boxed<C: Checksum>(self) -> Box<VdevBoxed<C>>
     where
-        Self: VdevRead<C> + VdevWrite,
+        Self: VdevRead<C> + VdevWrite + Sized,
     {
         Box::new(self)
     }
@@ -156,7 +156,7 @@ pub trait Vdev: Send + Sync + 'static {
 }
 
 /// Trait for reading from a leaf vdev.
-pub trait VdevLeafRead<R: AsMut<[u8]> + Send>: Clone + Send + Sync + 'static {
+pub trait VdevLeafRead<R: AsMut<[u8]> + Send>: Send + Sync + 'static {
     /// The [`Future`](../../futures/future/trait.Future.html) corresponding to
     /// [`read_raw`](trait.VdevLeaf.html#tymethod.read_raw).
     type ReadRaw: Future<Item = R, Error = Error> + Send;
@@ -170,7 +170,7 @@ pub trait VdevLeafRead<R: AsMut<[u8]> + Send>: Clone + Send + Sync + 'static {
 }
 
 /// Trait for writing to a leaf vdev.
-pub trait VdevLeafWrite: Clone + Send + Sync + 'static {
+pub trait VdevLeafWrite: Send + Sync + 'static {
     /// The [`Future`](../../futures/future/trait.Future.html) corresponding to
     /// [`write_raw`](trait.Vdev.html#tymethod.write_raw).
     type WriteRaw: Future<Item = (), Error = Error> + Send + 'static;
@@ -226,8 +226,6 @@ pub trait VdevBoxed<C: Checksum>: Send + Sync {
     fn num_disks(&self) -> usize;
     /// Flushes pending data (in caches) to disk.
     fn flush(&self) -> Result<(), Error>;
-    /// Clones this vdev.
-    fn clone_boxed(&self) -> Box<VdevBoxed<C>>;
     /// Writes the `data` at `offset`.
     ///
     /// Note: `data.len()` must be a multiple of `BLOCK_SIZE`.
@@ -292,9 +290,6 @@ impl<C: Checksum, V: Vdev + VdevWrite + VdevRead<C>> VdevBoxed<C> for V {
 
     fn flush(&self) -> Result<(), Error> {
         VdevWrite::flush(self)
-    }
-    fn clone_boxed(&self) -> Box<VdevBoxed<C>> {
-        Box::new(V::clone(self))
     }
     default fn write_raw(
         &self,

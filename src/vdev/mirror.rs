@@ -13,14 +13,6 @@ pub struct Mirror<V> {
     inner: Arc<Inner<V>>,
 }
 
-impl<V> Clone for Mirror<V> {
-    fn clone(&self) -> Self {
-        Mirror {
-            inner: Arc::clone(&self.inner),
-        }
-    }
-}
-
 struct Inner<V> {
     vdevs: Box<[V]>,
     id: String,
@@ -481,7 +473,7 @@ mod tests {
         for disk in &disks {
             disk.fail_writes(FailureMode::FailOperation);
         }
-        let vdev = Mirror::new(disks.clone().into_boxed_slice(), String::from("mirror"));
+        let vdev = Mirror::new(disks.into_boxed_slice(), String::from("mirror"));
         assert!(vdev.write(data, Block(0)).wait().is_err());
     }
 
@@ -503,15 +495,15 @@ mod tests {
         let disks: Vec<_> = (0..num_disks)
             .map(|id| FailingLeafVdev::new(Block(256), format!("{}", id)))
             .collect();
-        let vdev = Mirror::new(disks.clone().into_boxed_slice(), String::from("mirror"));
+        let vdev = Mirror::new(disks.into_boxed_slice(), String::from("mirror"));
 
         for (idx, &(offset, size)) in writes.iter().enumerate() {
             let offset = Block(offset as u64);
             let size = Block(size as u32);
 
-            for (idx, disk) in disks.iter().enumerate() {
+            for idx in 0..num_disks as usize {
                 if idx != write_non_failing_disk_idx {
-                    disk.fail_writes(write_failure_mode);
+                    vdev.inner.vdevs[idx].fail_writes(write_failure_mode);
                 }
             }
             let data = generate_data(idx, offset, size);
@@ -531,8 +523,8 @@ mod tests {
 
             vdev.read(size, offset, checksum).wait().unwrap();
 
-            for disk in &disks {
-                disk.fail_writes(FailureMode::NoFail);
+            for idx in 0..num_disks as usize {
+                vdev.inner.vdevs[idx].fail_writes(FailureMode::NoFail);
             }
 
             let scrub_result = vdev.scrub(size, offset, checksum).wait().unwrap();
@@ -540,16 +532,16 @@ mod tests {
             assert_eq!(scrub_result.faulted, faulted_blocks);
             assert_eq!(scrub_result.repaired, faulted_blocks);
 
-            for (idx, disk) in disks.iter().enumerate() {
+            for idx in 0..num_disks as usize {
                 if idx != read_non_failing_disk_idx {
-                    disk.fail_reads(read_failure_mode);
+                    vdev.inner.vdevs[idx].fail_reads(read_failure_mode);
                 }
             }
 
             vdev.read(size, offset, checksum).wait().unwrap();
 
-            for disk in &disks {
-                disk.fail_reads(FailureMode::NoFail);
+            for idx in 0..num_disks as usize {
+                vdev.inner.vdevs[idx].fail_reads(FailureMode::NoFail);
             }
         }
         TestResult::passed()

@@ -15,7 +15,6 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 /// `LeafVdev` that is backed by a file.
-#[derive(Clone)]
 pub struct File {
     inner: Arc<Inner>,
 }

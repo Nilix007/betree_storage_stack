@@ -11,7 +11,6 @@ use std::sync::Arc;
 
 /// This `vdev` will generate parity data and stripe all data to its child
 /// vdevs.
-#[derive(Clone)]
 pub struct Parity1<V> {
     inner: Arc<Inner<V>>,
 }
@@ -710,7 +709,7 @@ mod tests {
 
         disks[0].fail_writes(FailureMode::FailOperation);
         disks[1].fail_writes(FailureMode::FailOperation);
-        let vdev = Parity1::new(disks.clone().into_boxed_slice(), String::from("parity1"));
+        let vdev = Parity1::new(disks.into_boxed_slice(), String::from("parity1"));
         assert!(vdev.write(data, Block(0)).wait().is_err());
     }
 
@@ -732,13 +731,13 @@ mod tests {
         let disks: Vec<_> = (0..num_disks)
             .map(|id| FailingLeafVdev::new(Block(256), format!("{}", id)))
             .collect();
-        let vdev = Parity1::new(disks.clone().into_boxed_slice(), String::from("parity1"));
+        let vdev = Parity1::new(disks.into_boxed_slice(), String::from("parity1"));
 
         for (idx, &(offset, size)) in writes.iter().enumerate() {
             let offset = Block(offset as u64);
             let size = Block(size as u32);
 
-            disks[write_failing_disk_idx].fail_writes(write_failure_mode);
+            vdev.inner.vdevs[write_failing_disk_idx].fail_writes(write_failure_mode);
             let data = generate_data(idx, offset, size);
             let checksum = {
                 let mut state = XxHashBuilder.build();
@@ -756,18 +755,18 @@ mod tests {
 
             vdev.read(size, offset, checksum).wait().unwrap();
 
-            disks[write_failing_disk_idx].fail_writes(FailureMode::NoFail);
+            vdev.inner.vdevs[write_failing_disk_idx].fail_writes(FailureMode::NoFail);
 
             let scrub_result = vdev.scrub(size, offset, checksum).wait().unwrap();
             assert!(checksum.verify(&scrub_result.data).is_ok());
             assert_eq!(scrub_result.faulted, faulted_blocks);
             assert_eq!(scrub_result.repaired, faulted_blocks);
 
-            disks[read_failing_disk_idx].fail_reads(read_failure_mode);
+            vdev.inner.vdevs[read_failing_disk_idx].fail_reads(read_failure_mode);
 
             vdev.read(size, offset, checksum).wait().unwrap();
 
-            disks[read_failing_disk_idx].fail_reads(FailureMode::NoFail);
+            vdev.inner.vdevs[read_failing_disk_idx].fail_reads(FailureMode::NoFail);
         }
         TestResult::passed()
     }

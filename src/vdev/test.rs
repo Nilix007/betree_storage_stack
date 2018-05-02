@@ -29,7 +29,6 @@ impl Arbitrary for FailureMode {
     }
 }
 
-#[derive(Clone)]
 pub struct FailingLeafVdev {
     inner: Arc<Inner>,
 }
