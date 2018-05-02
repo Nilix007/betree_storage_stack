@@ -6,8 +6,8 @@ use std::borrow::Borrow;
 use std::collections::range::RangeArgument;
 use std::collections::{BTreeMap, Bound, VecDeque};
 use std::mem::replace;
-use tree::MessageAction;
 use tree::errors::*;
+use tree::MessageAction;
 
 fn next(v: &mut Vec<u8>) {
     v.push(0);

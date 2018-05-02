@@ -3,8 +3,8 @@
 
 use allocator::{Action, SegmentAllocator, SegmentId};
 use cache::AddSize;
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use size::{Size, StaticSize};
 use stable_deref_trait::StableDeref;
 use std::error;

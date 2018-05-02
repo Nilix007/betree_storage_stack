@@ -8,8 +8,8 @@ use quickcheck::{Arbitrary, Gen};
 use rand::{Rng, SeedableRng, XorShiftRng};
 use seqlock::SeqLock;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FailureMode {

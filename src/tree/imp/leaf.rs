@@ -199,9 +199,9 @@ impl LeafNode {
 mod tests {
     use super::{BTreeMap, CowBytes, LeafNode, Size, SlicedCowBytes};
     use quickcheck::{Arbitrary, Gen, TestResult};
-    use tree::DefaultMessageAction;
     use tree::imp::packed::PackedMap;
     use tree::message_action::DefaultMessageActionMsg;
+    use tree::DefaultMessageAction;
 
     impl Arbitrary for LeafNode {
         fn arbitrary<G: Gen>(g: &mut G) -> Self {

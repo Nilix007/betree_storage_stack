@@ -13,8 +13,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::hash::Hash;
 use std::ops::Deref;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::Arc;
 
 /// A clock cache. (1-bit approximation of LRU)
 pub struct ClockCache<K, V> {

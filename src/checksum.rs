@@ -1,7 +1,7 @@
 //! This module provides a `Checksum` trait for verifying data integrity.
 
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use size::{Size, StaticSize};
 use std::error::Error;
 use std::fmt;

@@ -1,8 +1,8 @@
 use super::errors::*;
 use bincode::{deserialize, serialize_into};
 use checksum::{Builder, State, XxHash, XxHashBuilder};
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use size::StaticSize;
 use storage_pool::StoragePoolLayer;
 use vdev::{Block, BLOCK_SIZE};

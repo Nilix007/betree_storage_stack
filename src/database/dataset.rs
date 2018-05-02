@@ -1,10 +1,10 @@
-use super::Database;
 use super::errors::*;
+use super::Database;
 use super::{ds_data_key, fetch_ds_data, DatasetData, DatasetId, DatasetTree, Generation};
 use cow_bytes::{CowBytes, SlicedCowBytes};
 use std::borrow::Borrow;
-use std::collections::HashSet;
 use std::collections::range::RangeArgument;
+use std::collections::HashSet;
 use std::sync::Arc;
 use tree::{DefaultMessageAction, Tree, TreeBaseLayer, TreeLayer};
 

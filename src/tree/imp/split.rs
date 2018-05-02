@@ -5,8 +5,8 @@ use cache::AddSize;
 use data_management::{HandlerDml, ObjectRef};
 use size::Size;
 use std::borrow::Borrow;
-use tree::MessageAction;
 use tree::errors::*;
+use tree::MessageAction;
 
 impl<X, R, M, I> Tree<X, M, I>
 where

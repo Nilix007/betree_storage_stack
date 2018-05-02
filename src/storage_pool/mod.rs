@@ -4,8 +4,8 @@
 
 use checksum::Checksum;
 use futures::Future;
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use std::fmt;
 use std::io;
 use vdev::{Block, Error as VdevError};

@@ -11,8 +11,8 @@ use std::io;
 use std::os::unix::fs::FileExt;
 use std::os::unix::fs::FileTypeExt;
 use std::os::unix::io::AsRawFd;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 /// `LeafVdev` that is backed by a file.
 #[derive(Clone)]

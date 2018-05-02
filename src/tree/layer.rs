@@ -1,7 +1,7 @@
 use super::MessageAction;
 use cow_bytes::{CowBytes, SlicedCowBytes};
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use std::borrow::Borrow;
 use std::collections::range::RangeArgument;
 

@@ -6,8 +6,8 @@ use buffer::{new_buffer, SplittableBuffer, SplittableMutBuffer};
 use checksum::Checksum;
 use futures::future::{join_all, Future};
 use std::iter::{once, repeat};
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 /// This `vdev` will generate parity data and stripe all data to its child
 /// vdevs.

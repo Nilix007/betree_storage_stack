@@ -5,8 +5,8 @@ use super::{AtomicStatistics, Block, ScrubResult, Statistics, Vdev, VdevBoxed, V
 use buffer::SplittableBuffer;
 use checksum::Checksum;
 use futures::future::{join_all, Future};
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 /// This `vdev` will mirror all data to its child vdevs.
 pub struct Mirror<V> {

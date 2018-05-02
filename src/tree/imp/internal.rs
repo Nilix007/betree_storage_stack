@@ -434,8 +434,8 @@ mod tests {
     use bincode::serialized_size;
     use quickcheck::{Arbitrary, Gen, TestResult};
     use serde::Serialize;
-    use tree::DefaultMessageAction;
     use tree::message_action::DefaultMessageActionMsg;
+    use tree::DefaultMessageAction;
 
     impl<T: Clone> Clone for InternalNode<T> {
         fn clone(&self) -> Self {

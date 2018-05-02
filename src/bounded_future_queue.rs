@@ -1,8 +1,8 @@
 //! This module provides a bounded queue of futures which are identified by a
 //! key.
 
-use futures::Stream;
 use futures::stream::FuturesUnordered;
+use futures::Stream;
 use futures::{Async, Future, IntoFuture, Poll};
 use std::borrow::Borrow;
 use std::collections::HashSet;

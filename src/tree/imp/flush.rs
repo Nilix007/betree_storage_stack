@@ -8,8 +8,8 @@ use stable_deref_trait::StableDeref;
 use std::borrow::Borrow;
 use std::mem::transmute;
 use std::ops::{Deref, DerefMut};
-use tree::MessageAction;
 use tree::errors::*;
+use tree::MessageAction;
 
 impl<X, R, M, I> Tree<X, M, I>
 where
