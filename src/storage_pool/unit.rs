@@ -2,6 +2,7 @@ use super::{Configuration, DiskOffset, StoragePoolLayer};
 use bounded_future_queue::BoundedFutureQueue;
 use checksum::Checksum;
 use futures::future::{join_all, Future};
+use futures_cpupool::{CpuFuture, CpuPool};
 use parking_lot::Mutex;
 use std::io;
 use std::sync::Arc;
@@ -16,9 +17,10 @@ pub struct StoragePoolUnit<C: Checksum> {
 pub(super) type WriteBackQueue =
     BoundedFutureQueue<DiskOffset, Box<Future<Item = (), Error = VdevError> + Send + 'static>>;
 
-pub(super) struct Inner<C> {
-    pub(super) devices: Vec<Box<VdevBoxed<C>>>,
-    pub(super) write_back_queue: Mutex<WriteBackQueue>,
+struct Inner<C> {
+    devices: Vec<Box<VdevBoxed<C>>>,
+    write_back_queue: Mutex<WriteBackQueue>,
+    pool: CpuPool,
 }
 
 impl<C: Checksum> StoragePoolLayer for StoragePoolUnit<C> {
@@ -31,6 +33,7 @@ impl<C: Checksum> StoragePoolLayer for StoragePoolUnit<C> {
             inner: Arc::new(Inner {
                 write_back_queue: Mutex::new(BoundedFutureQueue::new(20 * devices.len())),
                 devices,
+                pool: CpuPool::new_num_cpus(),
             }),
         })
     }
@@ -44,7 +47,7 @@ impl<C: Checksum> StoragePoolLayer for StoragePoolUnit<C> {
         self.read_async(size, offset, checksum)?.wait()
     }
 
-    type ReadAsync = Box<Future<Item = Box<[u8]>, Error = VdevError> + Send + 'static>;
+    type ReadAsync = CpuFuture<Box<[u8]>, VdevError>;
 
     fn read_async(
         &self,
@@ -53,12 +56,23 @@ impl<C: Checksum> StoragePoolLayer for StoragePoolUnit<C> {
         checksum: C,
     ) -> Result<Self::ReadAsync, VdevError> {
         self.inner.write_back_queue.lock().wait(&offset)?;
-        Ok(self.inner.devices[offset.disk_id()].read(size, offset.block_offset(), checksum))
+        Ok(self.inner
+            .pool
+            .spawn(self.inner.devices[offset.disk_id()].read(
+                size,
+                offset.block_offset(),
+                checksum,
+            )))
     }
 
     fn begin_write(&self, data: Box<[u8]>, offset: DiskOffset) -> Result<(), VdevError> {
-        let write = self.inner.devices[offset.disk_id()].write(data, offset.block_offset());
-        self.inner.write_back_queue.lock().enqueue(offset, write)
+        let write = self.inner
+            .pool
+            .spawn(self.inner.devices[offset.disk_id()].write(data, offset.block_offset()));
+        self.inner.write_back_queue.lock().enqueue(
+            offset,
+            Box::new(write) as Box<Future<Item = _, Error = _> + Send>,
+        )
     }
 
     fn write_raw(&self, data: Box<[u8]>, offset: Block<u64>) -> Result<(), VdevError> {

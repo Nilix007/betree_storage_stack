@@ -1,6 +1,5 @@
 //! Storage Pool configuration.
 use checksum::Checksum;
-use futures_cpupool::CpuPool;
 use itertools::Itertools;
 use libc;
 use ref_slice::ref_slice;
@@ -131,28 +130,27 @@ impl FromIterator<Vdev> for Configuration {
 impl Vdev {
     /// Opens file and devices and constructs a `Vdev`.
     fn build<C: Checksum>(&self, n: usize) -> io::Result<Box<VdevBoxed<C>>> {
-        let pool = CpuPool::new(4);
         match *self {
             Vdev::Mirror(ref vec) => {
-                let leaves: io::Result<Vec<_>> = vec.iter().map(|leaf| leaf.build(&pool)).collect();
+                let leaves: io::Result<Vec<_>> = vec.iter().map(LeafVdev::build).collect();
                 let leaves = leaves?.into_boxed_slice();
                 Ok(Box::new(vdev::Mirror::new(leaves, format!("mirror-{}", n))))
             }
             Vdev::Parity1(ref vec) => {
-                let leaves: io::Result<Vec<_>> = vec.iter().map(|leaf| leaf.build(&pool)).collect();
+                let leaves: io::Result<Vec<_>> = vec.iter().map(LeafVdev::build).collect();
                 let leaves = leaves?.into_boxed_slice();
                 Ok(Box::new(vdev::Parity1::new(
                     leaves,
                     format!("parity-{}", n),
                 )))
             }
-            Vdev::Leaf(ref leaf) => leaf.build(&pool).map(VdevTrait::boxed),
+            Vdev::Leaf(ref leaf) => leaf.build().map(VdevTrait::boxed),
         }
     }
 }
 
 impl LeafVdev {
-    fn build(&self, pool: &CpuPool) -> io::Result<vdev::File> {
+    fn build(&self) -> io::Result<vdev::File> {
         let file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -163,10 +161,8 @@ impl LeafVdev {
             return Err(io::Error::last_os_error());
         }
 
-        let pool = pool.clone();
         Ok(vdev::File::new(
             file,
-            pool,
             self.0.to_string_lossy().into_owned(),
         )?)
     }
