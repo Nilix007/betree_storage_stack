@@ -14,7 +14,7 @@ opt-level = 2
 debug = true
 
 [dependencies]
-futures = {version = "0.2", features = ["nightly"]}
+futures = {version = "0.2", features = ["nightly"], git = "https://github.com/rust-lang-nursery/futures-rs", rev = "6810513e6a2cede0a2746db12becec86757a1124"}
 serde = "1.0"
 serde_derive = "1.0"
 bincode = "1.0"
