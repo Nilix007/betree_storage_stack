@@ -26,7 +26,6 @@ log = "0.4"
 byteorder = "1.0"
 lz4 = "1.21"
 seqlock = { path = "seqlock/" }
-rental = "0.4"
 twox-hash = "1.1"
 stable_deref_trait = "1.0"
 unbytify = "0.2"

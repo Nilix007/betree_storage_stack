@@ -33,8 +33,6 @@ extern crate quickcheck;
 #[cfg(test)]
 extern crate rand;
 extern crate ref_slice;
-#[macro_use]
-extern crate rental;
 extern crate seqlock;
 extern crate serde;
 #[macro_use]

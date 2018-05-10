@@ -17,7 +17,6 @@ use std::collections::HashMap;
 use std::mem::{replace, transmute, ManuallyDrop};
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
 use std::thread::yield_now;
 use storage_pool::{DiskOffset, StoragePoolLayer};
 use vdev::{Block, BLOCK_SIZE};
@@ -919,28 +918,5 @@ impl<T, U> Deref for CacheValueRef<T, RwLockWriteGuard<'static, U>> {
 impl<T, U> DerefMut for CacheValueRef<T, RwLockWriteGuard<'static, U>> {
     fn deref_mut(&mut self) -> &mut U {
         &mut *self.guard
-    }
-}
-
-rental! {
-    mod rent {
-        use super::*;
-
-        #[rental]
-        pub struct PrefetchFuture<I: 'static> {
-            inner: Arc<I>,
-            f: Box<Future<Item = (), Error = Error> + Send + 'inner>,
-        }
-    }
-}
-
-use self::rent::PrefetchFuture;
-
-impl<I> Future for PrefetchFuture<I> {
-    type Item = ();
-    type Error = Error;
-
-    fn poll(&mut self, cx: &mut Context) -> Poll<Self::Item, Self::Error> {
-        self.rent_mut(|f| f.poll(cx))
     }
 }
