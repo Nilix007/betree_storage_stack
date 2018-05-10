@@ -1,6 +1,7 @@
 use super::errors::*;
-use super::{dead_list_key, DatasetId, DeadListData, Generation, Object, ObjectPointer, ObjectRef,
-            TreeInner};
+use super::{
+    dead_list_key, DatasetId, DeadListData, Generation, Object, ObjectPointer, ObjectRef, TreeInner,
+};
 use allocator::{Action, SegmentAllocator, SegmentId, SEGMENT_SIZE};
 use atomic_option::AtomicOption;
 use byteorder::{BigEndian, ByteOrder};

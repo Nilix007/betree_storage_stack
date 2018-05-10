@@ -1,7 +1,8 @@
 use super::errors::*;
 use super::util::alloc_uninitialized;
-use super::{AtomicStatistics, Block, ScrubResult, Statistics, Vdev, VdevLeafRead, VdevLeafWrite,
-            VdevRead};
+use super::{
+    AtomicStatistics, Block, ScrubResult, Statistics, Vdev, VdevLeafRead, VdevLeafWrite, VdevRead,
+};
 use checksum::Checksum;
 use futures::future::lazy;
 use futures::prelude::*;

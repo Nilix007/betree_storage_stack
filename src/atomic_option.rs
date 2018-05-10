@@ -21,6 +21,12 @@ pub struct AtomicOption<T> {
 unsafe impl<T: Send + Sync> Send for AtomicOption<T> {}
 unsafe impl<T: Send + Sync> Sync for AtomicOption<T> {}
 
+impl<T> Default for AtomicOption<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> AtomicOption<T> {
     /// Returns a new `AtomicOption` which is initialized to `None`.
     pub fn new() -> Self {

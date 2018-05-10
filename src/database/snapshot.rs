@@ -1,9 +1,10 @@
 use super::dataset::Dataset;
 use super::errors::*;
 use super::Database;
-use super::{dead_list_max_key, dead_list_max_key_ds, dead_list_min_key, ds_data_key,
-            fetch_ds_data, fetch_ss_data, offset_from_dead_list_key, ss_data_key, ss_data_key_max,
-            ss_key};
+use super::{
+    dead_list_max_key, dead_list_max_key_ds, dead_list_min_key, ds_data_key, fetch_ds_data,
+    fetch_ss_data, offset_from_dead_list_key, ss_data_key, ss_data_key_max, ss_key,
+};
 use super::{DatasetData, DatasetId, DeadListData};
 use super::{DatasetTree, Generation, ObjectPointer};
 use allocator::Action;

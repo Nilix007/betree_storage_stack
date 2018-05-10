@@ -62,7 +62,8 @@ impl Drop for byte_slice_t {
 }
 
 /// A byte slice reference counter
-pub struct byte_slice_rc_t;
+#[repr(C)]
+pub struct byte_slice_rc_t(Vec<u8>);
 
 trait HandleResult {
     type Result;

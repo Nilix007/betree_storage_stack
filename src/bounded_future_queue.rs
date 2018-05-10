@@ -44,7 +44,7 @@ impl<K: Eq + Hash, F: Future<Item = ()>> BoundedFutureQueue<K, F> {
         BoundedFutureQueue {
             map: HashSet::new(),
             queue: FuturesUnordered::new(),
-            limit: limit,
+            limit,
         }
     }
 

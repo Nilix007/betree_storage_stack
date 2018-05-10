@@ -21,12 +21,16 @@ use betree_storage_stack::cache::{Cache, ClockCache};
 use betree_storage_stack::checksum::{XxHash, XxHashBuilder};
 use betree_storage_stack::compression;
 use betree_storage_stack::cow_bytes::{CowBytes, SlicedCowBytes};
-use betree_storage_stack::data_management::{self, Dml, Dmu, Handler as HandlerTrait, HandlerDml,
-                                            ObjectRef};
-use betree_storage_stack::storage_pool::{configuration, Configuration, DiskOffset,
-                                         StoragePoolLayer, StoragePoolUnit};
-use betree_storage_stack::tree::{DefaultMessageAction, Error as TreeError, Inner as TreeInner,
-                                 Node, Tree, TreeBaseLayer, TreeLayer};
+use betree_storage_stack::data_management::{
+    self, Dml, Dmu, Handler as HandlerTrait, HandlerDml, ObjectRef,
+};
+use betree_storage_stack::storage_pool::{
+    configuration, Configuration, DiskOffset, StoragePoolLayer, StoragePoolUnit,
+};
+use betree_storage_stack::tree::{
+    DefaultMessageAction, Error as TreeError, Inner as TreeInner, Node, Tree, TreeBaseLayer,
+    TreeLayer,
+};
 use betree_storage_stack::vdev::{Block, BLOCK_SIZE};
 use byteorder::{BigEndian, ByteOrder, NativeEndian};
 use clap::{App, Arg};

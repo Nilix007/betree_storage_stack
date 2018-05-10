@@ -1,7 +1,9 @@
 use super::errors::*;
 use super::util::*;
-use super::{AtomicStatistics, Block, ScrubResult, Statistics, Vdev, VdevLeafRead, VdevLeafWrite,
-            VdevRead, VdevWrite};
+use super::{
+    AtomicStatistics, Block, ScrubResult, Statistics, Vdev, VdevLeafRead, VdevLeafWrite, VdevRead,
+    VdevWrite,
+};
 use buffer::SplittableBuffer;
 use checksum::Checksum;
 use futures::future::{join_all, Future};

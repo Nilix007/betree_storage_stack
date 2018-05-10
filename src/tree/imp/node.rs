@@ -3,8 +3,10 @@ use super::child_buffer::ChildBuffer;
 use super::internal::{InternalNode, TakeChildBuffer};
 use super::leaf::LeafNode;
 use super::packed::PackedMap;
-use super::{FillUpResult, MAX_INTERNAL_NODE_SIZE, MAX_LEAF_NODE_SIZE, MIN_FANOUT, MIN_FLUSH_SIZE,
-            MIN_LEAF_NODE_SIZE};
+use super::{
+    FillUpResult, MAX_INTERNAL_NODE_SIZE, MAX_LEAF_NODE_SIZE, MIN_FANOUT, MIN_FLUSH_SIZE,
+    MIN_LEAF_NODE_SIZE,
+};
 use bincode::{deserialize, serialize_into};
 use cow_bytes::{CowBytes, SlicedCowBytes};
 use data_management::{Object, ObjectRef};

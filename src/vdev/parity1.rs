@@ -1,7 +1,9 @@
 use super::errors::*;
 use super::util::*;
-use super::{AtomicStatistics, Block, ScrubResult, Statistics, Vdev, VdevLeafRead, VdevLeafWrite,
-            VdevRead, VdevWrite, BLOCK_SIZE};
+use super::{
+    AtomicStatistics, Block, ScrubResult, Statistics, Vdev, VdevLeafRead, VdevLeafWrite, VdevRead,
+    VdevWrite, BLOCK_SIZE,
+};
 use buffer::{new_buffer, SplittableBuffer, SplittableMutBuffer};
 use checksum::Checksum;
 use futures::future::{join_all, Future};
@@ -542,12 +544,12 @@ fn col_length_sequence(
         .take(disk_cnt - 1)
 }
 
-fn block_iter<'a>(
+fn block_iter(
     long_col_len: Block<u32>,
     long_col_cnt: usize,
     disk_cnt: usize,
-    data: &'a [u8],
-) -> impl Iterator<Item = &'a [u8]> {
+    data: &[u8],
+) -> impl Iterator<Item = &[u8]> {
     struct BlockIter<'a, I> {
         iter: I,
         data: &'a [u8],

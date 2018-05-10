@@ -6,7 +6,6 @@ use checksum::{Builder, Checksum, State};
 use compression::{Compress, Compression};
 use futures::executor::block_on;
 use futures::prelude::*;
-use futures::task::Context;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use serde::de::DeserializeOwned;
 use serde::ser::Error as SerError;

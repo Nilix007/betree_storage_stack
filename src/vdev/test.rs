@@ -1,5 +1,7 @@
-use super::{AtomicStatistics, Block, Error, ErrorKind, ScrubResult, Statistics, Vdev,
-            VdevLeafRead, VdevLeafWrite, VdevRead, VdevWrite};
+use super::{
+    AtomicStatistics, Block, Error, ErrorKind, ScrubResult, Statistics, Vdev, VdevLeafRead,
+    VdevLeafWrite, VdevRead, VdevWrite,
+};
 use checksum::Checksum;
 use checksum::{Builder, State, XxHash, XxHashBuilder};
 use futures::executor::block_on;
