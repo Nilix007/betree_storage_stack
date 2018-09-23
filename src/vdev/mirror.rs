@@ -6,9 +6,8 @@ use super::{
 };
 use buffer::SplittableBuffer;
 use checksum::Checksum;
-use futures::future::{join_all, Future};
-use futures::prelude::*;
-use std::boxed::PinBox;
+use futures::future::join_all;
+use std::future::{from_generator, Future, FutureObj};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -42,74 +41,66 @@ struct ReadResult<V> {
     inner: Arc<Inner<V>>,
 }
 
-fn handle_repair<F, V, R>(
-    size: Block<u32>,
-    offset: Block<u64>,
-    f: F,
-) -> PinBox<Future<Item = R, Error = Error> + Send>
+async fn handle_repair<F, V, R>(size: Block<u32>, offset: Block<u64>, f: F) -> Result<R, Error>
 where
-    F: Future<Item = ReadResult<V>, Error = !> + Send + 'static,
+    F: Future<Output = Result<ReadResult<V>, !>> + Send + 'static,
     V: VdevLeafWrite,
     R: From<ScrubResult>,
 {
-    let f = async_block! {
-        let ReadResult {
-            data,
-            failed_disks,
-            inner,
-        } = await!(f)?;
-        inner.stats.read.fetch_add(size.as_u64(), Ordering::Relaxed);
+    let ReadResult {
+        data,
+        failed_disks,
+        inner,
+    } = await!(f)?;
+    inner.stats.read.fetch_add(size.as_u64(), Ordering::Relaxed);
 
-        let data = match data {
-            Some(data) => data,
-            None => {
-                inner
-                    .stats
-                    .failed_reads
-                    .fetch_add(size.as_u64(), Ordering::Relaxed);
-                bail!(ErrorKind::ReadError(inner.id.clone()));
-            }
-        };
-        let faulted = failed_disks.len() as u32;
-        let repair: Vec<_> = failed_disks
-            .into_iter()
-            .map(|idx| {
-                inner.vdevs[idx]
-                    .write_raw(data.clone(), offset, true)
-                    .wrap_unfailable_result()
-            })
-            .collect();
-        let mut total_repaired = 0;
-        for write_result in await!(join_all(repair))? {
-            if write_result.is_err() {
-                // TODO
-            } else {
-                total_repaired += 1;
-            }
+    let data = match data {
+        Some(data) => data,
+        None => {
+            inner
+                .stats
+                .failed_reads
+                .fetch_add(size.as_u64(), Ordering::Relaxed);
+            bail!(ErrorKind::ReadError(inner.id.clone()));
         }
-        inner
-            .stats
-            .repaired
-            .fetch_add(u64::from(total_repaired) * size.as_u64(), Ordering::Relaxed);
-        Ok(ScrubResult {
-            data,
-            faulted: size * faulted,
-            repaired: size * total_repaired,
-        }.into())
     };
-    f.pin()
+    let faulted = failed_disks.len() as u32;
+    let repair: Vec<_> = failed_disks
+        .into_iter()
+        .map(|idx| {
+            inner.vdevs[idx]
+                .write_raw(data.clone(), offset, true)
+                .wrap_unfailable_result()
+        }).collect();
+    let mut total_repaired = 0;
+    for write_result in await!(join_all(repair))? {
+        if write_result.is_err() {
+            // TODO
+        } else {
+            total_repaired += 1;
+        }
+    }
+    inner
+        .stats
+        .repaired
+        .fetch_add(u64::from(total_repaired) * size.as_u64(), Ordering::Relaxed);
+    Ok(ScrubResult {
+        data,
+        faulted: size * faulted,
+        repaired: size * total_repaired,
+    }.into())
 }
 
 impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrite> VdevRead<C>
     for Mirror<V>
 {
-    type Read = PinBox<Future<Item = Box<[u8]>, Error = Error> + Send>;
-    type Scrub = PinBox<Future<Item = ScrubResult, Error = Error> + Send>;
-    type ReadRaw = Box<Future<Item = Vec<Box<[u8]>>, Error = Error> + Send + 'static>;
+    type Read = FutureObj<'static, Result<Box<[u8]>, Error>>;
+    type Scrub = FutureObj<'static, Result<ScrubResult, Error>>;
+    type ReadRaw = Box<Future<Output = Result<Vec<Box<[u8]>>, Error>> + Send + 'static>;
 
     fn read(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Read {
         let inner = Arc::clone(&self.inner);
-        let f = async_block! {
+        let f = move || {
             // Switch disk every 32 MiB. (which is 2^25 bytes)
             // TODO 32 MiB too large?
             let start_idx = (offset.to_bytes() >> 25) as usize % inner.vdevs.len();
@@ -133,12 +124,12 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
                 inner,
             })
         };
-        handle_repair(size, offset, f.pin())
+        FutureObj::new(Box::new(handle_repair(size, offset, from_generator(f))))
     }
 
     fn scrub(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Scrub {
         let inner = Arc::clone(&self.inner);
-        let f = async_block! {
+        let f = move || {
             let futures: Vec<_> = inner
                 .vdevs
                 .iter()
@@ -161,7 +152,7 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
                 inner,
             })
         };
-        handle_repair(size, offset, f.pin())
+        FutureObj::new(Box::new(handle_repair(size, offset, from_generator(f))))
     }
 
     fn read_raw(&self, size: Block<u32>, offset: Block<u64>) -> Self::ReadRaw {
@@ -191,12 +182,12 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
 }
 
 impl<V: VdevLeafWrite> VdevWrite for Mirror<V> {
-    type Write = PinBox<Future<Item = (), Error = Error> + Send>;
+    type Write = FutureObj<'static, Result<(), Error>>;
     type WriteRaw = UnfailableJoinAll<V::WriteRaw, FailedWriteUpdateStats<V>>;
 
     fn write(&self, data: Box<[u8]>, offset: Block<u64>) -> Self::Write {
         let inner = Arc::clone(&self.inner);
-        let f = async_block! {
+        let f = move || {
             let size = Block::from_bytes(data.len() as u32);
             let data = SplittableBuffer::new(data);
             inner
@@ -227,7 +218,7 @@ impl<V: VdevLeafWrite> VdevWrite for Mirror<V> {
                 bail!(ErrorKind::WriteError(inner.id.clone()))
             }
         };
-        f.pin()
+        FutureObj::new(Box::new(from_generator(f)))
     }
 
     fn flush(&self) -> Result<(), Error> {
