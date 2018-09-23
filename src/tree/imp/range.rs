@@ -100,18 +100,19 @@ where
         };
 
         // Strip entries which are out of bounds from the buffer.
-        while self.buffer
+        while self
+            .buffer
             .front()
             .map(|&(ref key, _)| match self.min_key {
                 MyBound::Included(ref min_key) => key < min_key,
                 MyBound::Excluded(ref min_key) => key <= min_key,
-            })
-            .unwrap_or_default()
+            }).unwrap_or_default()
         {
             self.buffer.pop_front().unwrap();
         }
         if let Some(ref max_key) = self.max_key {
-            while self.buffer
+            while self
+                .buffer
                 .back()
                 .map(|&(ref key, _)| key > max_key)
                 .unwrap_or_default()
@@ -224,8 +225,7 @@ where
             .skip_while(|&(ref key, _)| match *left_pivot_key {
                 None => false,
                 Some(ref min_key) => key < min_key,
-            })
-            .take_while(|&(ref key, _)| match *right_pivot_key {
+            }).take_while(|&(ref key, _)| match *right_pivot_key {
                 None => true,
                 Some(ref max_key) => key <= max_key,
             });

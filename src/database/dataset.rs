@@ -91,7 +91,8 @@ impl Database {
 
     fn allocate_ds_id(&mut self) -> Result<DatasetId> {
         let key = &[0u8] as &[_];
-        let last_ds_id = self.root_tree
+        let last_ds_id = self
+            .root_tree
             .get(key)?
             .map(|b| DatasetId::unpack(&b))
             .unwrap_or_default();

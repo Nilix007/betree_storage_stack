@@ -166,7 +166,8 @@ where
         if let Some(node) = self.dml.try_get_mut(&self.inner.borrow().root_node.read()) {
             return Ok(node);
         }
-        Ok(self.dml
+        Ok(self
+            .dml
             .get_mut(&mut self.inner.borrow().root_node.write(), self.tree_id())?)
     }
 
@@ -404,7 +405,8 @@ where
 
     fn sync(&self) -> Result<Self::Pointer, Error> {
         // TODO
-        let obj_ptr = self.dml
+        let obj_ptr = self
+            .dml
             .write_back(|| self.inner.borrow().root_node.write())?;
         Ok(obj_ptr)
     }

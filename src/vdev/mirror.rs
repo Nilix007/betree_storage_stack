@@ -136,8 +136,7 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
                 .map(|disk| {
                     disk.read(size, offset, checksum.clone())
                         .wrap_unfailable_result()
-                })
-                .collect();
+                }).collect();
             let mut data = None;
             let mut failed_disks = Vec::new();
             for (idx, result) in await!(join_all(futures))?.into_iter().enumerate() {
@@ -157,14 +156,14 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
 
     fn read_raw(&self, size: Block<u32>, offset: Block<u64>) -> Self::ReadRaw {
         let inner = Arc::clone(&self.inner);
-        let futures: Vec<_> = self.inner
+        let futures: Vec<_> = self
+            .inner
             .vdevs
             .iter()
             .map(|disk| {
                 let data = alloc_uninitialized(size.to_bytes() as usize);
                 VdevLeafRead::<Box<[u8]>>::read_raw(disk, data, offset).wrap_unfailable_result()
-            })
-            .collect();
+            }).collect();
         Box::new(join_all(futures).then(move |result| {
             let mut v = Vec::new();
             for r in result.unwrap() {
@@ -200,8 +199,7 @@ impl<V: VdevLeafWrite> VdevWrite for Mirror<V> {
                 .map(|disk| {
                     disk.write_raw(data.clone(), offset, false)
                         .wrap_unfailable_result()
-                })
-                .collect();
+                }).collect();
             let results = await!(join_all(futures))?;
             let total_writes = results.len();
             let mut failed_writes = 0;
@@ -230,14 +228,14 @@ impl<V: VdevLeafWrite> VdevWrite for Mirror<V> {
 
     fn write_raw(&self, data: Box<[u8]>, offset: Block<u64>) -> Self::WriteRaw {
         let data = SplittableBuffer::new(data);
-        let futures = self.inner
+        let futures = self
+            .inner
             .vdevs
             .iter()
             .map(|disk| {
                 disk.write_raw(data.clone(), offset, false)
                     .wrap_unfailable_result()
-            })
-            .collect();
+            }).collect();
         UnfailableJoinAll::new(
             futures,
             FailedWriteUpdateStats {

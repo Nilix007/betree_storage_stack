@@ -117,14 +117,14 @@ impl<
 
     fn read_raw(&self, size: Block<u32>, offset: Block<u64>) -> Self::ReadRaw {
         let inner = Arc::clone(&self.inner);
-        let futures: Vec<_> = self.inner
+        let futures: Vec<_> = self
+            .inner
             .vdevs
             .iter()
             .map(|disk| {
                 let data = alloc_uninitialized(size.to_bytes() as usize);
                 disk.read_raw(data, offset).wrap_unfailable_result()
-            })
-            .collect();
+            }).collect();
         Box::new(join_all(futures).then(move |result| {
             let mut v = Vec::new();
             for r in result.unwrap() {
@@ -403,8 +403,7 @@ impl<V: VdevLeafWrite> VdevWrite for Parity1<V> {
                     SplittableBuffer::from(parity_block),
                     parity_disk_offset,
                     false,
-                )
-                .wrap_unfailable_result(),
+                ).wrap_unfailable_result(),
         );
 
         for ((disk, disk_offset), col_length) in
@@ -414,11 +413,13 @@ impl<V: VdevLeafWrite> VdevWrite for Parity1<V> {
             if col_length == Block(0) {
                 break;
             }
-            writes.push(disk.write_raw(
-                data.split_off(col_length.to_bytes() as usize),
-                disk_offset,
-                false,
-            ).wrap_unfailable_result());
+            writes.push(
+                disk.write_raw(
+                    data.split_off(col_length.to_bytes() as usize),
+                    disk_offset,
+                    false,
+                ).wrap_unfailable_result(),
+            );
         }
         UnfailableJoinAllPlusOne::new(
             writes,
@@ -437,7 +438,8 @@ impl<V: VdevLeafWrite> VdevWrite for Parity1<V> {
     }
 
     fn write_raw(&self, data: Box<[u8]>, offset: Block<u64>) -> Self::WriteRaw {
-        let futures = self.inner
+        let futures = self
+            .inner
             .vdevs
             .iter()
             .map(|v| v.write(data.clone(), offset).wrap_unfailable_result())
@@ -535,8 +537,7 @@ fn col_length_sequence(
             Block(0)
         } else {
             long_col_len - 1
-        }))
-        .take(disk_cnt - 1)
+        })).take(disk_cnt - 1)
 }
 
 fn block_iter(
