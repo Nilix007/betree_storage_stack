@@ -3,8 +3,8 @@ use super::Database;
 use super::{ds_data_key, fetch_ds_data, DatasetData, DatasetId, DatasetTree, Generation};
 use cow_bytes::{CowBytes, SlicedCowBytes};
 use std::borrow::Borrow;
-use std::collections::range::RangeArgument;
 use std::collections::HashSet;
+use std::ops::RangeBounds;
 use std::sync::Arc;
 use tree::{DefaultMessageAction, Tree, TreeBaseLayer, TreeLayer};
 
@@ -173,7 +173,7 @@ impl Dataset {
         range: R,
     ) -> Result<Box<Iterator<Item = Result<(CowBytes, SlicedCowBytes)>>>>
     where
-        R: RangeArgument<K>,
+        R: RangeBounds<K>,
         K: Borrow<[u8]> + Into<CowBytes>,
     {
         Ok(Box::new(self.tree.range(range)?.map(|r| Ok(r?))))
@@ -182,7 +182,7 @@ impl Dataset {
     /// Removes all key-value pairs in the given key range.
     pub fn range_delete<R, K>(&self, range: R) -> Result<()>
     where
-        R: RangeArgument<K>,
+        R: RangeBounds<K>,
         K: Borrow<[u8]> + Into<Box<[u8]>>,
     {
         Ok(self.tree.range_delete(range)?)

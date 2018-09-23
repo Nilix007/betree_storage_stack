@@ -3,9 +3,9 @@ use super::{Inner, Tree};
 use cow_bytes::{CowBytes, SlicedCowBytes};
 use data_management::{Dml, ObjectRef};
 use std::borrow::Borrow;
-use std::collections::range::RangeArgument;
 use std::collections::{BTreeMap, Bound, VecDeque};
 use std::mem::replace;
+use std::ops::RangeBounds;
 use tree::errors::*;
 use tree::MessageAction;
 
@@ -62,7 +62,7 @@ where
 {
     pub(super) fn new<K, T>(range: T, tree: Tree<X, M, I>) -> Self
     where
-        T: RangeArgument<K>,
+        T: RangeBounds<K>,
         K: Borrow<[u8]>,
     {
         let min_key = match range.start() {

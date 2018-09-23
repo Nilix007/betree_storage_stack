@@ -3,7 +3,7 @@ use cow_bytes::{CowBytes, SlicedCowBytes};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::borrow::Borrow;
-use std::collections::range::RangeArgument;
+use std::ops::RangeBounds;
 
 use super::errors::*;
 
@@ -35,14 +35,14 @@ pub trait TreeLayer<M: MessageAction>: TreeBaseLayer<M> {
     /// Returns an iterator that will iterate over the entries in that range.
     fn range<K, R>(&self, range: R) -> Result<Self::Range, Error>
     where
-        R: RangeArgument<K>,
+        R: RangeBounds<K>,
         K: Borrow<[u8]> + Into<CowBytes>,
         Self: Clone;
 
     /// Deletes all entries in the given key `range`.
     fn range_delete<K, R>(&self, range: R) -> Result<(), Error>
     where
-        R: RangeArgument<K>,
+        R: RangeBounds<K>,
         K: Borrow<[u8]> + Into<Box<[u8]>>;
 
     /// Tree pointer type that represents a synced tree.

@@ -12,7 +12,7 @@ use byteorder::{BigEndian, ByteOrder};
 use cow_bytes::{CowBytes, SlicedCowBytes};
 use data_management::Handler;
 use std::borrow::Borrow;
-use std::collections::range::RangeArgument;
+use std::ops::RangeBounds;
 use std::sync::Arc;
 use tree::{DefaultMessageAction, Tree, TreeBaseLayer, TreeLayer};
 
@@ -169,7 +169,7 @@ impl Snapshot {
         range: R,
     ) -> Result<Box<Iterator<Item = Result<(CowBytes, SlicedCowBytes)>>>>
     where
-        R: RangeArgument<K>,
+        R: RangeBounds<K>,
         K: Borrow<[u8]> + Into<CowBytes>,
     {
         Ok(Box::new(self.tree.range(range)?.map(|r| Ok(r?))))

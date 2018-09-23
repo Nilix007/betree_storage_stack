@@ -9,10 +9,10 @@ use data_management::{Dml, DmlBase, HandlerDml, ObjectRef};
 use owning_ref::OwningRef;
 use parking_lot::{RwLock, RwLockWriteGuard};
 use std::borrow::Borrow;
-use std::collections::range::RangeArgument;
 use std::collections::Bound;
 use std::marker::PhantomData;
 use std::mem::replace;
+use std::ops::RangeBounds;
 use tree::MessageAction;
 
 #[derive(Debug)]
@@ -357,7 +357,7 @@ where
 
     fn range<K, T>(&self, range: T) -> Result<Self::Range, Error>
     where
-        T: RangeArgument<K>,
+        T: RangeBounds<K>,
         K: Borrow<[u8]> + Into<CowBytes>,
         Self: Clone,
     {
@@ -366,7 +366,7 @@ where
 
     fn range_delete<K, T>(&self, range: T) -> Result<(), Error>
     where
-        T: RangeArgument<K>,
+        T: RangeBounds<K>,
         K: Borrow<[u8]>,
     {
         if let (Bound::Unbounded, Bound::Unbounded) = (range.start(), range.end()) {
