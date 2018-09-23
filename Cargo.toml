@@ -14,14 +14,14 @@ opt-level = 2
 debug = true
 
 [dependencies]
-futures = {version = "0.2", features = ["nightly"], git = "https://github.com/rust-lang-nursery/futures-rs", rev = "6810513e6a2cede0a2746db12becec86757a1124"}
+futures-preview = "0.3.0-alpha.6"
 serde = "1.0"
 serde_derive = "1.0"
 bincode = "1.0"
-error-chain = "0.11"
+error-chain = "0.12"
 libc = "0.2"
-parking_lot = "0.5"
-owning_ref = "0.3"
+parking_lot = "0.6"
+owning_ref = "0.4"
 log = "0.4"
 byteorder = "1.0"
 lz4 = "1.21"
@@ -39,7 +39,7 @@ indicatif = "0.9"
 clippy = {version = "*", optional = true}
 
 [dev-dependencies]
-rand = "0.4"
-quickcheck = "0.6"
-quickcheck_macros = "0.6"
-clap = "2.26"
+rand = "0.5"
+quickcheck = "0.7"
+quickcheck_macros = "0.7"
+clap = "2.32"
