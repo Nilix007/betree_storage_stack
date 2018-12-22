@@ -4,7 +4,8 @@
 
 use checksum::Checksum;
 use futures::executor::block_on;
-use futures::Future;
+use futures::prelude::*;
+use futures::TryFuture;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::fmt;
@@ -32,11 +33,11 @@ pub trait StoragePoolLayer: Clone + Send + Sync + 'static {
         offset: DiskOffset,
         checksum: Self::Checksum,
     ) -> Result<Box<[u8]>, VdevError> {
-        block_on(self.read_async(size, offset, checksum)?)
+        block_on(self.read_async(size, offset, checksum)?.into_future())
     }
 
     /// Future returned by `read_async`.
-    type ReadAsync: Future<Item = Box<[u8]>, Error = VdevError> + Send;
+    type ReadAsync: TryFuture<Ok = Box<[u8]>, Error = VdevError> + Send;
 
     /// Reads `size` blocks asynchronously from the given `offset`.
     fn read_async(

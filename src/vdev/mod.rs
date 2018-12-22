@@ -3,7 +3,8 @@
 //! that are built on top of storage devices.
 
 use checksum::Checksum;
-use futures::Future;
+use futures::future::{FutureObj, TryFutureExt};
+use futures::TryFuture;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Internal block size (4KiB)
@@ -71,7 +72,7 @@ impl From<ScrubResult> for Box<[u8]> {
 pub trait VdevRead<C: Checksum>: Send + Sync + 'static {
     /// The [`Future`](../../futures/future/trait.Future.html) corresponding to
     /// [`read`](trait.VdevRead.html#tymethod.read).
-    type Read: Future<Item = Box<[u8]>, Error = Error> + Send + 'static;
+    type Read: TryFuture<Ok = Box<[u8]>, Error = Error> + Send + 'static;
     /// Reads `size` data blocks at `offset` and verifies the data with the
     /// `checksum`.
     /// May issue write operations to repair faulted data blocks of components.
@@ -79,7 +80,7 @@ pub trait VdevRead<C: Checksum>: Send + Sync + 'static {
 
     /// The [`Future`](../../futures/future/trait.Future.html) corresponding to
     /// [`scrub`](trait.VdevRead.html#tymethod.scrub).
-    type Scrub: Future<Item = ScrubResult, Error = Error> + Send + 'static;
+    type Scrub: TryFuture<Ok = ScrubResult, Error = Error> + Send + 'static;
     /// Reads `size` blocks at `offset` and verifies the data with the
     /// `checksum`.
     /// In contrast to `read`, this function will read and verify data from
@@ -89,7 +90,7 @@ pub trait VdevRead<C: Checksum>: Send + Sync + 'static {
 
     /// The [`Future`](../../futures/future/trait.Future.html) corresponding to
     /// [`read_raw`](trait.VdevRead.html#tymethod.read_raw).
-    type ReadRaw: Future<Item = Vec<Box<[u8]>>, Error = Error> + Send;
+    type ReadRaw: TryFuture<Ok = Vec<Box<[u8]>>, Error = Error> + Send;
     /// Reads `size` blocks at `offset` of every child vdev. Does not verify
     /// the data.
     fn read_raw(&self, size: Block<u32>, offset: Block<u64>) -> Self::ReadRaw;
@@ -99,7 +100,7 @@ pub trait VdevRead<C: Checksum>: Send + Sync + 'static {
 pub trait VdevWrite {
     /// The [`Future`](../../futures/future/trait.Future.html) corresponding to
     /// [`write`](trait.Vdev.html#tymethod.write).
-    type Write: Future<Item = (), Error = Error> + Send + 'static;
+    type Write: TryFuture<Ok = (), Error = Error> + Send + 'static;
     /// Writes the `data` at `offset`. Returns success if the data has been
     /// written to
     /// enough replicas so that the data can be retrieved later on.
@@ -112,7 +113,7 @@ pub trait VdevWrite {
 
     /// The [`Future`](../../futures/future/trait.Future.html) corresponding to
     /// [`write_raw`](trait.Vdev.html#tymethod.write_raw).
-    type WriteRaw: Future<Item = (), Error = Error> + Send + 'static;
+    type WriteRaw: TryFuture<Ok = (), Error = Error> + Send + 'static;
     /// Writes the `data` at `offset` on all child vdevs like mirroring.
     /// Returns success
     /// if the data has been written to enough replicas so that the data can be
@@ -159,7 +160,7 @@ pub trait Vdev: Send + Sync + 'static {
 pub trait VdevLeafRead<R: AsMut<[u8]> + Send>: Send + Sync + 'static {
     /// The [`Future`](../../futures/future/trait.Future.html) corresponding to
     /// [`read_raw`](trait.VdevLeaf.html#tymethod.read_raw).
-    type ReadRaw: Future<Item = R, Error = Error> + Send;
+    type ReadRaw: TryFuture<Ok = R, Error = Error> + Send;
     /// Reads `buffer.as_mut().len()` bytes at `offset`. Does not verify the
     /// data.
     fn read_raw(&self, buffer: R, offset: Block<u64>) -> Self::ReadRaw;
@@ -173,7 +174,7 @@ pub trait VdevLeafRead<R: AsMut<[u8]> + Send>: Send + Sync + 'static {
 pub trait VdevLeafWrite: Send + Sync + 'static {
     /// The [`Future`](../../futures/future/trait.Future.html) corresponding to
     /// [`write_raw`](trait.Vdev.html#tymethod.write_raw).
-    type WriteRaw: Future<Item = (), Error = Error> + Send + 'static;
+    type WriteRaw: TryFuture<Ok = (), Error = Error> + Send + 'static;
 
     /// Writes the `data` at `offset`.
     ///
@@ -204,17 +205,13 @@ pub trait VdevBoxed<C: Checksum>: Send + Sync {
         size: Block<u32>,
         offset: Block<u64>,
         checksum: C,
-    ) -> Box<Future<Item = Box<[u8]>, Error = Error> + Send + 'static>;
+    ) -> FutureObj<'static, Result<Box<[u8]>, Error>>;
     /// Writes the `data` at `offset`. Returns success if the data has been
     /// written to
     /// enough replicas so that the data can be retrieved later on.
     ///
     /// Note: `data.len()` must be a multiple of `BLOCK_SIZE`.
-    fn write(
-        &self,
-        data: Box<[u8]>,
-        offset: Block<u64>,
-    ) -> Box<Future<Item = (), Error = Error> + Send + 'static>;
+    fn write(&self, data: Box<[u8]>, offset: Block<u64>) -> FutureObj<'static, Result<(), Error>>;
     /// Returns the actual size of a data block which may be larger due to
     /// parity data.
     fn actual_size(&self, size: Block<u32>) -> Block<u32>;
@@ -233,7 +230,7 @@ pub trait VdevBoxed<C: Checksum>: Send + Sync {
         &self,
         data: Box<[u8]>,
         offset: Block<u64>,
-    ) -> Box<Future<Item = (), Error = Error> + Send + 'static>;
+    ) -> FutureObj<'static, Result<(), Error>>;
     /// Reads `size` blocks at `offset` and verifies the data with the
     /// `checksum`.
     /// In contrast to `read`, this function will read and verify data from
@@ -244,14 +241,14 @@ pub trait VdevBoxed<C: Checksum>: Send + Sync {
         size: Block<u32>,
         offset: Block<u64>,
         checksum: C,
-    ) -> Box<Future<Item = ScrubResult, Error = Error> + Send + 'static>;
+    ) -> FutureObj<'static, Result<ScrubResult, Error>>;
     /// Reads `size` blocks at `offset` of every child vdev. Does not verify
     /// the data.
     fn read_raw(
         &self,
         size: Block<u32>,
         offset: Block<u64>,
-    ) -> Box<Future<Item = Vec<Box<[u8]>>, Error = Error> + Send + 'static>;
+    ) -> FutureObj<'static, Result<Vec<Box<[u8]>>, Error>>;
 }
 
 impl<C: Checksum, V: Vdev + VdevWrite + VdevRead<C>> VdevBoxed<C> for V {
@@ -260,16 +257,18 @@ impl<C: Checksum, V: Vdev + VdevWrite + VdevRead<C>> VdevBoxed<C> for V {
         size: Block<u32>,
         offset: Block<u64>,
         checksum: C,
-    ) -> Box<Future<Item = Box<[u8]>, Error = Error> + Send + 'static> {
-        Box::new(VdevRead::<C>::read(self, size, offset, checksum))
+    ) -> FutureObj<'static, Result<Box<[u8]>, Error>> {
+        FutureObj::new(Box::new(
+            VdevRead::<C>::read(self, size, offset, checksum).into_future(),
+        ))
     }
 
     default fn write(
         &self,
         data: Box<[u8]>,
         offset: Block<u64>,
-    ) -> Box<Future<Item = (), Error = Error> + Send + 'static> {
-        Box::new(VdevWrite::write(self, data, offset))
+    ) -> FutureObj<'static, Result<(), Error>> {
+        FutureObj::new(Box::new(VdevWrite::write(self, data, offset).into_future()))
     }
 
     fn actual_size(&self, size: Block<u32>) -> Block<u32> {
@@ -295,23 +294,29 @@ impl<C: Checksum, V: Vdev + VdevWrite + VdevRead<C>> VdevBoxed<C> for V {
         &self,
         data: Box<[u8]>,
         offset: Block<u64>,
-    ) -> Box<Future<Item = (), Error = Error> + Send + 'static> {
-        Box::new(VdevWrite::write_raw(self, data, offset))
+    ) -> FutureObj<'static, Result<(), Error>> {
+        FutureObj::new(Box::new(
+            VdevWrite::write_raw(self, data, offset).into_future(),
+        ))
     }
     default fn scrub(
         &self,
         size: Block<u32>,
         offset: Block<u64>,
         checksum: C,
-    ) -> Box<Future<Item = ScrubResult, Error = Error> + Send + 'static> {
-        Box::new(VdevRead::<C>::scrub(self, size, offset, checksum))
+    ) -> FutureObj<'static, Result<ScrubResult, Error>> {
+        FutureObj::new(Box::new(
+            VdevRead::<C>::scrub(self, size, offset, checksum).into_future(),
+        ))
     }
     default fn read_raw(
         &self,
         size: Block<u32>,
         offset: Block<u64>,
-    ) -> Box<Future<Item = Vec<Box<[u8]>>, Error = Error> + Send + 'static> {
-        Box::new(VdevRead::<C>::read_raw(self, size, offset))
+    ) -> FutureObj<'static, Result<Vec<Box<[u8]>>, Error>> {
+        FutureObj::new(Box::new(
+            VdevRead::<C>::read_raw(self, size, offset).into_future(),
+        ))
     }
 }
 

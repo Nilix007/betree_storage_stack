@@ -5,7 +5,7 @@ use super::{
 use checksum::Checksum;
 use checksum::{Builder, State, XxHash, XxHashBuilder};
 use futures::executor::block_on;
-use futures::future::{result, FutureResult, Map};
+use futures::future::{ready, MapOk, Ready};
 use futures::prelude::*;
 use parking_lot::Mutex;
 use quickcheck::{Arbitrary, Gen};
@@ -29,7 +29,8 @@ impl Arbitrary for FailureMode {
             FailureMode::NoFail,
             FailureMode::FailOperation,
             FailureMode::BadData,
-        ]).unwrap()
+        ])
+        .unwrap()
     }
 }
 
@@ -91,12 +92,12 @@ impl FailingLeafVdev {
 }
 
 impl<C: Checksum> VdevRead<C> for FailingLeafVdev {
-    type Read = FutureResult<Box<[u8]>, Error>;
-    type Scrub = Map<Self::Read, fn(Box<[u8]>) -> ScrubResult>;
-    type ReadRaw = FutureResult<Vec<Box<[u8]>>, Error>;
+    type Read = Ready<Result<Box<[u8]>, Error>>;
+    type Scrub = MapOk<Self::Read, fn(Box<[u8]>) -> ScrubResult>;
+    type ReadRaw = Ready<Result<Vec<Box<[u8]>>, Error>>;
 
     fn read(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Read {
-        result(
+        ready(
             self.handle_read(size, offset)
                 .and_then(|b| match checksum.verify(&b) {
                     Ok(()) => Ok(b),
@@ -113,11 +114,11 @@ impl<C: Checksum> VdevRead<C> for FailingLeafVdev {
                 repaired: Block(0),
             }
         }
-        self.read(size, offset, checksum).map(to_scrub_result)
+        self.read(size, offset, checksum).map_ok(to_scrub_result)
     }
 
     fn read_raw(&self, size: Block<u32>, offset: Block<u64>) -> Self::ReadRaw {
-        result(self.handle_read(size, offset).map(|b| vec![b]))
+        ready(self.handle_read(size, offset).map(|b| vec![b]))
     }
 }
 
@@ -150,7 +151,7 @@ impl Vdev for FailingLeafVdev {
 }
 
 impl<T: AsMut<[u8]> + Send + 'static> VdevLeafRead<T> for FailingLeafVdev {
-    type ReadRaw = FutureResult<T, Error>;
+    type ReadRaw = Ready<Result<T, Error>>;
 
     fn read_raw(&self, mut buf: T, offset: Block<u64>) -> Self::ReadRaw {
         let size = Block::from_bytes(buf.as_mut().len() as u32);
@@ -174,7 +175,7 @@ impl<T: AsMut<[u8]> + Send + 'static> VdevLeafRead<T> for FailingLeafVdev {
                     .stats
                     .failed_reads
                     .fetch_add(size.as_u64(), Ordering::Relaxed);
-                return result(Err(Error::from(ErrorKind::ReadError(
+                return ready(Err(Error::from(ErrorKind::ReadError(
                     self.inner.id.clone(),
                 ))));
             }
@@ -184,7 +185,7 @@ impl<T: AsMut<[u8]> + Send + 'static> VdevLeafRead<T> for FailingLeafVdev {
             FailureMode::Panic => panic!(),
         };
         buf.as_mut().copy_from_slice(&v);
-        result(Ok(buf))
+        ready(Ok(buf))
     }
 
     fn checksum_error_occurred(&self, size: Block<u32>) {
@@ -196,7 +197,7 @@ impl<T: AsMut<[u8]> + Send + 'static> VdevLeafRead<T> for FailingLeafVdev {
 }
 
 impl VdevLeafWrite for FailingLeafVdev {
-    type WriteRaw = FutureResult<(), Error>;
+    type WriteRaw = Ready<Result<(), Error>>;
 
     fn write_raw<T: AsRef<[u8]>>(
         &self,
@@ -220,7 +221,7 @@ impl VdevLeafWrite for FailingLeafVdev {
                     .stats
                     .failed_writes
                     .fetch_add(size_in_blocks, Ordering::Relaxed);
-                return result(Err(Error::from(ErrorKind::WriteError(
+                return ready(Err(Error::from(ErrorKind::WriteError(
                     self.inner.id.clone(),
                 ))));
             }
@@ -239,7 +240,7 @@ impl VdevLeafWrite for FailingLeafVdev {
                 .repaired
                 .fetch_add(size_in_blocks, Ordering::Relaxed);
         }
-        result(Ok(()))
+        ready(Ok(()))
     }
 
     fn flush(&self) -> Result<(), Error> {
@@ -312,7 +313,7 @@ pub fn test_writes_are_persistent<V: Vdev + VdevRead<XxHash> + VdevWrite>(
         };
         checksums.insert(idx, checksum);
 
-        block_on(vdev.write(data.clone(), offset)).expect("Write failed");
+        block_on(vdev.write(data.clone(), offset).into_future()).expect("Write failed");
     }
     for (idx, &(offset, size)) in writes.iter().enumerate() {
         let size = Block(size as u32);
@@ -325,7 +326,7 @@ pub fn test_writes_are_persistent<V: Vdev + VdevRead<XxHash> + VdevWrite>(
         }
         let offset = Block(offset as u64);
         let checksum = checksums[&idx];
-        let data = block_on(vdev.read(size, offset, checksum)).expect("Read failed");
+        let data = block_on(vdev.read(size, offset, checksum).into_future()).expect("Read failed");
         let gen_data = generate_data(idx, offset, size);
         assert!(checksum.verify(&data).is_ok());
         assert!(checksum.verify(&gen_data).is_ok());

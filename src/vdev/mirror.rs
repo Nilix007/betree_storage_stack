@@ -6,8 +6,10 @@ use super::{
 };
 use buffer::SplittableBuffer;
 use checksum::Checksum;
-use futures::future::join_all;
-use std::future::{from_generator, Future, FutureObj};
+use futures::future::{ready, FutureObj, IntoFuture};
+use futures::prelude::*;
+use futures::stream::{futures_ordered, futures_unordered};
+use std::future::{from_generator, Future};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -70,10 +72,12 @@ where
         .map(|idx| {
             inner.vdevs[idx]
                 .write_raw(data.clone(), offset, true)
-                .wrap_unfailable_result()
-        }).collect();
+                .into_future()
+        })
+        .collect();
     let mut total_repaired = 0;
-    for write_result in await!(join_all(repair))? {
+    let mut s = futures_unordered(repair);
+    while let Some(write_result) = await!(s.next()) {
         if write_result.is_err() {
             // TODO
         } else {
@@ -96,7 +100,7 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
 {
     type Read = FutureObj<'static, Result<Box<[u8]>, Error>>;
     type Scrub = FutureObj<'static, Result<ScrubResult, Error>>;
-    type ReadRaw = Box<Future<Output = Result<Vec<Box<[u8]>>, Error>> + Send + 'static>;
+    type ReadRaw = FutureObj<'static, Result<Vec<Box<[u8]>>, Error>>;
 
     fn read(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Read {
         let inner = Arc::clone(&self.inner);
@@ -110,7 +114,7 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
             for idx in 0..disk_cnt {
                 let idx = (idx + start_idx) % inner.vdevs.len();
                 let f = inner.vdevs[idx].read(size, offset, checksum.clone());
-                match await!(f) {
+                match await!(f.into_future()) {
                     Ok(x) => {
                         data = Some(x);
                         break;
@@ -133,13 +137,12 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
             let futures: Vec<_> = inner
                 .vdevs
                 .iter()
-                .map(|disk| {
-                    disk.read(size, offset, checksum.clone())
-                        .wrap_unfailable_result()
-                }).collect();
+                .map(|disk| disk.read(size, offset, checksum.clone()).into_future())
+                .collect();
+            let futures: Vec<_> = await!(futures_ordered(futures).collect());
             let mut data = None;
             let mut failed_disks = Vec::new();
-            for (idx, result) in await!(join_all(futures))?.into_iter().enumerate() {
+            for (idx, result) in futures.into_iter().enumerate() {
                 match result {
                     Ok(x) => data = Some(x),
                     Err(_) => failed_disks.push(idx),
@@ -156,33 +159,33 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
 
     fn read_raw(&self, size: Block<u32>, offset: Block<u64>) -> Self::ReadRaw {
         let inner = Arc::clone(&self.inner);
-        let futures: Vec<_> = self
-            .inner
-            .vdevs
-            .iter()
-            .map(|disk| {
-                let data = alloc_uninitialized(size.to_bytes() as usize);
-                VdevLeafRead::<Box<[u8]>>::read_raw(disk, data, offset).wrap_unfailable_result()
-            }).collect();
-        Box::new(join_all(futures).then(move |result| {
-            let mut v = Vec::new();
-            for r in result.unwrap() {
-                if let Ok(x) = r {
-                    v.push(x);
-                }
-            }
-            if v.is_empty() {
-                bail!(ErrorKind::ReadError(inner.id.clone()))
-            } else {
-                Ok(v)
-            }
-        }))
+        let futures = self.inner.vdevs.iter().map(|disk| {
+            let data = alloc_uninitialized(size.to_bytes() as usize);
+            VdevLeafRead::<Box<[u8]>>::read_raw(disk, data, offset).into_future()
+        });
+        FutureObj::new(Box::new(
+            futures_unordered(futures)
+                .collect::<Vec<_>>()
+                .then(move |result| {
+                    let mut v = Vec::new();
+                    for r in result {
+                        if let Ok(x) = r {
+                            v.push(x);
+                        }
+                    }
+                    if v.is_empty() {
+                        ready(Err(Error::from(ErrorKind::ReadError(inner.id.clone()))))
+                    } else {
+                        ready(Ok(v))
+                    }
+                }),
+        ))
     }
 }
 
 impl<V: VdevLeafWrite> VdevWrite for Mirror<V> {
     type Write = FutureObj<'static, Result<(), Error>>;
-    type WriteRaw = UnfailableJoinAll<V::WriteRaw, FailedWriteUpdateStats<V>>;
+    type WriteRaw = UnfailableJoinAll<IntoFuture<V::WriteRaw>, FailedWriteUpdateStats<V>>;
 
     fn write(&self, data: Box<[u8]>, offset: Block<u64>) -> Self::Write {
         let inner = Arc::clone(&self.inner);
@@ -196,11 +199,9 @@ impl<V: VdevLeafWrite> VdevWrite for Mirror<V> {
             let futures: Vec<_> = inner
                 .vdevs
                 .iter()
-                .map(|disk| {
-                    disk.write_raw(data.clone(), offset, false)
-                        .wrap_unfailable_result()
-                }).collect();
-            let results = await!(join_all(futures))?;
+                .map(|disk| disk.write_raw(data.clone(), offset, false).into_future())
+                .collect();
+            let results: Vec<_> = await!(futures_unordered(futures).collect());
             let total_writes = results.len();
             let mut failed_writes = 0;
             for result in results {
@@ -232,10 +233,8 @@ impl<V: VdevLeafWrite> VdevWrite for Mirror<V> {
             .inner
             .vdevs
             .iter()
-            .map(|disk| {
-                disk.write_raw(data.clone(), offset, false)
-                    .wrap_unfailable_result()
-            }).collect();
+            .map(|disk| disk.write_raw(data.clone(), offset, false).into_future())
+            .collect();
         UnfailableJoinAll::new(
             futures,
             FailedWriteUpdateStats {

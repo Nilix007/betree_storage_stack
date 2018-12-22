@@ -2,43 +2,44 @@
 //! key.
 
 use futures::executor::block_on;
+use futures::future::{ok, ready, IntoFuture};
 use futures::prelude::*;
 use futures::stream::FuturesUnordered;
-use futures::task::Context;
-use futures::{Async, Future, IntoFuture, Poll};
+use futures::task::LocalWaker;
+use futures::{try_ready, Poll, TryFuture};
 use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::hash::Hash;
+use std::pin::Pin;
 
 struct Helper<K, F> {
     key: Option<K>,
     future: F,
 }
 
-impl<K, F> Future for Helper<K, F>
+impl<K, F> TryFuture for Helper<K, F>
 where
-    F: Future<Item = ()>,
+    F: TryFuture<Ok = ()>,
 {
-    type Item = K;
+    type Ok = K;
     type Error = F::Error;
 
-    fn poll(&mut self, cx: &mut Context) -> Poll<Self::Item, Self::Error> {
-        match self.future.poll(cx) {
-            Ok(Async::Pending) => Ok(Async::Pending),
-            Ok(Async::Ready(())) => Ok(Async::Ready(self.key.take().unwrap())),
-            Err(e) => Err(e),
-        }
+    fn try_poll(self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Result<Self::Ok, Self::Error>> {
+        let this = unsafe { Pin::get_mut_unchecked(self) };
+        let f = unsafe { Pin::new_unchecked(&mut this.future) };
+        try_ready!(f.try_poll(lw));
+        Poll::Ready(Ok(this.key.take().unwrap()))
     }
 }
 
 /// A bounded queue of `F`s which are identified by a key `K`.
 pub struct BoundedFutureQueue<K, F> {
     map: HashSet<K>,
-    queue: FuturesUnordered<Helper<K, F>>,
+    queue: FuturesUnordered<IntoFuture<Helper<K, F>>>,
     limit: usize,
 }
 
-impl<K: Eq + Hash, F: Future<Item = ()>> BoundedFutureQueue<K, F> {
+impl<K: Eq + Hash, F: TryFuture<Ok = ()>> BoundedFutureQueue<K, F> {
     /// Creates a new queue with the given `limit`.
     pub fn new(limit: usize) -> Self {
         BoundedFutureQueue {
@@ -49,17 +50,18 @@ impl<K: Eq + Hash, F: Future<Item = ()>> BoundedFutureQueue<K, F> {
     }
 
     /// Enqueues a new `Future`. This function will block if the queue is full.
-    pub fn enqueue<I>(&mut self, key: K, f: I) -> Result<(), F::Error>
+    pub fn enqueue(&mut self, key: K, future: F) -> Result<(), F::Error>
     where
-        I: IntoFuture<Future = F, Item = (), Error = F::Error>,
         K: Clone,
     {
         self.wait(&key)?;
-        let future = f.into_future();
-        self.queue.push(Helper {
-            future,
-            key: Some(key.clone()),
-        });
+        self.queue.push(
+            Helper {
+                future,
+                key: Some(key.clone()),
+            }
+            .into_future(),
+        );
         self.map.insert(key);
         let limit = self.limit;
         self.drain_while_above_limit(limit)?;
@@ -76,7 +78,7 @@ impl<K: Eq + Hash, F: Future<Item = ()>> BoundedFutureQueue<K, F> {
     pub fn wait_async<'a, Q: Borrow<K> + 'a>(
         &'a mut self,
         key: Q,
-    ) -> impl Future<Item = (), Error = F::Error> + 'a {
+    ) -> impl TryFuture<Ok = (), Error = F::Error> + 'a {
         // If `map` does not contain `key`,
         // `key` is not in the queue. By setting found to false,
         // we don't actually wait for any futures in the queue.
@@ -94,13 +96,13 @@ impl<K: Eq + Hash, F: Future<Item = ()>> BoundedFutureQueue<K, F> {
     /// Waits for the given `key`.
     /// May flush the whole queue if a future returned an error beforehand.
     pub fn wait(&mut self, key: &K) -> Result<(), F::Error> {
-        block_on(self.wait_async(key))
+        block_on(self.wait_async(key).into_future())
     }
 
     /// Flushes the queue.
     pub fn flush(&mut self) -> Result<(), F::Error> {
         self.map.clear();
-        block_on(self.queue.by_ref().map(|_| ()).collect::<Vec<_>>()).map(|_| ())
+        block_on(self.queue.by_ref().map_ok(|_| ()).try_collect::<Vec<()>>()).map(|_| ())
     }
 
     /// Returns true iff the queue's size is at the limit.
@@ -111,7 +113,7 @@ impl<K: Eq + Hash, F: Future<Item = ()>> BoundedFutureQueue<K, F> {
     fn drain_while_above_limit(&mut self, limit: usize) -> Result<(), F::Error> {
         if self.map.len() > limit {
             let amount = self.map.len() - limit;
-            let keys: Vec<_> = block_on(self.queue.by_ref().take(amount as u64).collect())?;
+            let keys: Vec<_> = block_on(self.queue.by_ref().take(amount as u64).try_collect())?;
             for key in keys {
                 self.map.remove(&key);
             }
@@ -122,18 +124,22 @@ impl<K: Eq + Hash, F: Future<Item = ()>> BoundedFutureQueue<K, F> {
     fn drain_while<'a, G: 'a>(
         &'a mut self,
         mut f: G,
-    ) -> impl Future<Item = (), Error = F::Error> + 'a
+    ) -> impl TryFuture<Ok = (), Error = F::Error> + 'a
     where
         G: FnMut(&K) -> bool,
     {
         let map = &mut self.map;
         self.queue
             .by_ref()
-            .take_while(move |key| Ok(f(key)))
-            .for_each(move |key| {
-                map.remove(&key);
-                Ok(())
+            .take_while(move |key| {
+                ready(match key {
+                    Ok(key) => f(key),
+                    Err(_) => false,
+                })
             })
-            .map(|_| ())
+            .try_for_each(move |key| {
+                map.remove(&key);
+                ok(())
+            })
     }
 }

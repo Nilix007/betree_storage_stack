@@ -14,6 +14,7 @@
 #![feature(futures_api)]
 #![feature(gen_future)]
 #![feature(proc_macro_non_items)]
+#![feature(arbitrary_self_types)]
 #![cfg_attr(any(test, feature = "clippy"), feature(plugin))]
 #![cfg_attr(feature = "clippy", plugin(clippy))]
 #![cfg_attr(test, plugin(quickcheck_macros))]

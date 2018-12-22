@@ -1,92 +1,76 @@
-use futures::future::{join_all, JoinAll, Then};
 use futures::prelude::*;
-use futures::task::Context;
-
-type WrapUnfailableResultFn<T> = fn(T) -> Result<T, !>;
-pub type UnfailableFuture<F> = Then<
-    F,
-    Result<Result<<F as Future>::Item, <F as Future>::Error>, !>,
-    WrapUnfailableResultFn<Result<<F as Future>::Item, <F as Future>::Error>>,
->;
-
-pub trait UnfailableFutureExt: Future + Sized {
-    fn wrap_unfailable_result(self) -> UnfailableFuture<Self>;
-}
-
-impl<F: Future> UnfailableFutureExt for F {
-    fn wrap_unfailable_result(self) -> UnfailableFuture<Self> {
-        self.then(Ok as WrapUnfailableResultFn<_>)
-    }
-}
+use futures::ready;
+use futures::stream::{futures_unordered, Collect, FuturesUnordered};
+use futures::task::LocalWaker;
+use futures::task::Poll;
+use std::pin::Pin;
 
 pub struct UnfailableJoinAll<F: Future, G: Failed> {
-    future: JoinAll<UnfailableFuture<F>>,
+    future: Collect<FuturesUnordered<F>, Vec<F::Output>>,
     fail: Option<G>,
 }
 
 impl<F: Future, G: Failed> UnfailableJoinAll<F, G> {
-    pub(super) fn new(futures: Vec<UnfailableFuture<F>>, fail: G) -> Self {
+    pub(super) fn new(futures: Vec<F>, fail: G) -> Self {
         UnfailableJoinAll {
-            future: join_all(futures),
+            future: futures_unordered(futures).collect(),
             fail: Some(fail),
         }
     }
 }
 
-impl<F: Future<Item = ()>, G: Failed> Future for UnfailableJoinAll<F, G> {
-    type Item = ();
-    type Error = F::Error;
+impl<F: Future<Output = Result<(), E>>, G: Failed, E> TryFuture for UnfailableJoinAll<F, G> {
+    type Ok = ();
+    type Error = E;
 
-    fn poll(&mut self, cx: &mut Context) -> Poll<Self::Item, Self::Error> {
-        let results = match self.future.poll(cx) {
-            Ok(Async::Pending) => return Ok(Async::Pending),
-            Ok(Async::Ready(results)) => results,
-        };
+    fn try_poll(self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Result<Self::Ok, Self::Error>> {
+        let this = unsafe { Pin::get_mut_unchecked(self) };
+        let f = unsafe { Pin::new_unchecked(&mut this.future) };
+        let results = ready!(f.poll(lw));
         for result in results {
             if let Err(e) = result {
-                self.fail.take().unwrap().failed();
-                bail!(e);
+                this.fail.take().unwrap().failed();
+                return Poll::Ready(Err(e));
             }
         }
-        Ok(Async::Ready(()))
+        Poll::Ready(Ok(()))
     }
 }
 
 pub struct UnfailableJoinAllPlusOne<F: Future, G: Failed> {
-    future: JoinAll<UnfailableFuture<F>>,
+    future: Collect<FuturesUnordered<F>, Vec<F::Output>>,
     fail: Option<G>,
 }
 
 impl<F: Future, G: Failed> UnfailableJoinAllPlusOne<F, G> {
-    pub(super) fn new(futures: Vec<UnfailableFuture<F>>, fail: G) -> Self {
+    pub(super) fn new(futures: Vec<F>, fail: G) -> Self {
         UnfailableJoinAllPlusOne {
-            future: join_all(futures),
+            future: futures_unordered(futures).collect(),
             fail: Some(fail),
         }
     }
 }
 
-impl<F: Future<Item = ()>, G: Failed> Future for UnfailableJoinAllPlusOne<F, G> {
-    type Item = ();
-    type Error = F::Error;
+impl<F: Future<Output = Result<(), E>>, G: Failed, E> TryFuture for UnfailableJoinAllPlusOne<F, G> {
+    type Ok = ();
+    type Error = E;
 
-    fn poll(&mut self, cx: &mut Context) -> Poll<Self::Item, Self::Error> {
-        let results = match self.future.poll(cx) {
-            Ok(Async::Pending) => return Ok(Async::Pending),
-            Ok(Async::Ready(results)) => results,
-        };
+    fn try_poll(self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Result<Self::Ok, Self::Error>> {
+        let this = unsafe { Pin::get_mut_unchecked(self) };
+        let f = unsafe { Pin::new_unchecked(&mut this.future) };
+        let results = ready!(f.poll(lw));
         let mut error_occurred = false;
         for result in results {
             if let Err(e) = result {
                 if !error_occurred {
                     error_occurred = true;
                 } else {
-                    self.fail.take().unwrap().failed();
-                    bail!(e)
+                    this.fail.take().unwrap().failed();
+                    return Poll::Ready(Err(e));
                 }
             }
         }
-        Ok(Async::Ready(()))
+        Poll::Ready(Ok(()))
     }
 }
 

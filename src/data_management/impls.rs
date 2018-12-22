@@ -5,6 +5,7 @@ use cache::{AddSize, Cache, ChangeKeyError, RemoveError};
 use checksum::{Builder, Checksum, State};
 use compression::{Compress, Compression};
 use futures::executor::block_on;
+use futures::future::{ok, FutureObj};
 use futures::prelude::*;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use serde::de::DeserializeOwned;
@@ -294,22 +295,22 @@ where
         &self,
         op: &<Self as DmlBase>::ObjectPointer,
     ) -> Result<
-        impl Future<
-                Item = (
+        impl TryFuture<
+                Ok = (
                     ObjectPointer<C, <SPL as StoragePoolLayer>::Checksum, I, G>,
                     Box<[u8]>,
                 ),
                 Error = Error,
-            >
-            + Send,
+            > + Send,
         Error,
     > {
         let ptr = op.clone();
 
-        Ok(self.pool
+        Ok(self
+            .pool
             .read_async(op.size, op.offset, op.checksum.clone())?
             .map_err(Error::from)
-            .and_then(move |data| Ok((ptr, data))))
+            .and_then(move |data| ok((ptr, data))))
     }
 
     fn insert_object_into_cache(&self, key: ObjectKey<H::Generation>, mut object: E::Value) {
@@ -805,14 +806,16 @@ where
     }
 
     type Prefetch =
-        Box<Future<Item = (<Self as DmlBase>::ObjectPointer, Box<[u8]>), Error = Error> + Send>;
+        FutureObj<'static, Result<(<Self as DmlBase>::ObjectPointer, Box<[u8]>), Error>>;
     fn prefetch(&self, or: &Self::ObjectRef) -> Result<Option<Self::Prefetch>, Error> {
         if self.cache.read().contains_key(&or.as_key()) {
             return Ok(None);
         }
         Ok(match *or {
             ObjectRef::Modified(_) | ObjectRef::InWriteback(_) => None,
-            ObjectRef::Unmodified(ref p) => Some(Box::new(self.try_fetch_async(p)?)),
+            ObjectRef::Unmodified(ref p) => Some(FutureObj::new(Box::new(
+                self.try_fetch_async(p)?.into_future(),
+            ))),
         })
     }
 

@@ -6,8 +6,9 @@ use super::{
 };
 use buffer::{new_buffer, SplittableBuffer, SplittableMutBuffer};
 use checksum::Checksum;
-use futures::future::{join_all, Future};
+use futures::future::{ready, FutureObj, IntoFuture};
 use futures::prelude::*;
+use futures::stream::{futures_ordered, futures_unordered};
 use std::iter::{once, repeat};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -103,45 +104,57 @@ impl<
         C: Checksum,
     > VdevRead<C> for Parity1<V>
 {
-    type Read = Box<Future<Item = Box<[u8]>, Error = Error> + Send>;
-    type Scrub = Box<Future<Item = ScrubResult, Error = Error> + Send>;
-    type ReadRaw = Box<Future<Item = Vec<Box<[u8]>>, Error = Error> + Send>;
+    type Read = FutureObj<'static, Result<Box<[u8]>, Error>>;
+    type Scrub = FutureObj<'static, Result<ScrubResult, Error>>;
+    type ReadRaw = FutureObj<'static, Result<Vec<Box<[u8]>>, Error>>;
 
     fn read(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Read {
-        read(Arc::clone(&self.inner), size, offset, checksum, false)
+        FutureObj::new(Box::new(read(
+            Arc::clone(&self.inner),
+            size,
+            offset,
+            checksum,
+            false,
+        )))
     }
 
     fn scrub(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Scrub {
-        read(Arc::clone(&self.inner), size, offset, checksum, true)
+        FutureObj::new(Box::new(read(
+            Arc::clone(&self.inner),
+            size,
+            offset,
+            checksum,
+            true,
+        )))
     }
 
     fn read_raw(&self, size: Block<u32>, offset: Block<u64>) -> Self::ReadRaw {
         let inner = Arc::clone(&self.inner);
-        let futures: Vec<_> = self
-            .inner
-            .vdevs
-            .iter()
-            .map(|disk| {
-                let data = alloc_uninitialized(size.to_bytes() as usize);
-                disk.read_raw(data, offset).wrap_unfailable_result()
-            }).collect();
-        Box::new(join_all(futures).then(move |result| {
-            let mut v = Vec::new();
-            for r in result.unwrap() {
-                if let Ok(x) = r {
-                    v.push(x);
-                }
-            }
-            if v.is_empty() {
-                bail!(ErrorKind::ReadError(inner.id.clone()))
-            } else {
-                Ok(v)
-            }
-        }))
+        let futures = self.inner.vdevs.iter().map(|disk| {
+            let data = alloc_uninitialized(size.to_bytes() as usize);
+            disk.read_raw(data, offset).into_future()
+        });
+        FutureObj::new(Box::new(
+            futures_unordered(futures)
+                .collect::<Vec<_>>()
+                .then(move |result| {
+                    let mut v = Vec::new();
+                    for r in result {
+                        if let Ok(x) = r {
+                            v.push(x);
+                        }
+                    }
+                    if v.is_empty() {
+                        ready(Err(Error::from(ErrorKind::ReadError(inner.id.clone()))))
+                    } else {
+                        ready(Ok(v))
+                    }
+                }),
+        ))
     }
 }
 
-fn read<V, R, C>(
+async fn read<V, R, C>(
     inner: Arc<Inner<V>>,
     size: Block<u32>,
     offset: Block<u64>,
@@ -170,21 +183,25 @@ where
             &inner.vdevs,
             parity_disk_idx,
             parity_disk_offset,
-        ).zip(col_length_sequence(long_col_len, long_col_cnt, disk_cnt))
+        )
+        .zip(col_length_sequence(long_col_len, long_col_cnt, disk_cnt))
         {
             if col_length == Block(0) {
                 break;
             }
             reads.push(
                 disk.read_raw(buf.split_off(col_length.to_bytes() as usize), disk_offset)
-                    .wrap_unfailable_result(),
+                    .into_future(),
             );
         }
         drop(buf);
     }
     let mut failed_idx = None;
     let mut faulted = Block(0);
-    for (idx, result) in await!(join_all(reads))?.into_iter().enumerate() {
+    for (idx, result) in await!(futures_ordered(reads).collect::<Vec<_>>())
+        .into_iter()
+        .enumerate()
+    {
         if result.is_err() {
             faulted += calc_col_length(idx, long_col_len, long_col_cnt);
             if failed_idx.is_none() {
@@ -207,24 +224,29 @@ where
             data,
             faulted: Block(0),
             repaired: Block(0),
-        }.into());
+        }
+        .into());
     }
 
-    let parity_future = inner.vdevs[parity_disk_idx].read_raw(
-        vec![0; long_col_len.to_bytes() as usize].into_boxed_slice(),
-        parity_disk_offset,
-    );
+    let parity_future = inner.vdevs[parity_disk_idx]
+        .read_raw(
+            vec![0; long_col_len.to_bytes() as usize].into_boxed_slice(),
+            parity_disk_offset,
+        )
+        .into_future();
     let parity_block = match await!(parity_future) {
         Ok(data) => data,
-        Err(_) => if failed_idx.is_some() {
-            inner
-                .stats
-                .failed_reads
-                .fetch_add(size.as_u64(), Ordering::Relaxed);
-            bail!(ErrorKind::ReadError(inner.id.clone()));
-        } else {
-            vec![0; long_col_len.to_bytes() as usize].into_boxed_slice()
-        },
+        Err(_) => {
+            if failed_idx.is_some() {
+                inner
+                    .stats
+                    .failed_reads
+                    .fetch_add(size.as_u64(), Ordering::Relaxed);
+                bail!(ErrorKind::ReadError(inner.id.clone()));
+            } else {
+                vec![0; long_col_len.to_bytes() as usize].into_boxed_slice()
+            }
+        }
     };
 
     if let Some(failed_idx) = failed_idx {
@@ -264,11 +286,10 @@ where
             parity_disk_offset + 1
         };
 
-        let repaired = match await!(inner.vdevs[bad_disk_idx].write_raw(
-            repaired_block,
-            bad_disk_offset,
-            true
-        )) {
+        let repaired = match await!(inner.vdevs[bad_disk_idx]
+            .write_raw(repaired_block, bad_disk_offset, true)
+            .into_future())
+        {
             Ok(()) => faulted,
             Err(_) => Block(0),
         };
@@ -276,7 +297,8 @@ where
             data,
             faulted,
             repaired,
-        }.into())
+        }
+        .into())
     } else if scrub && checksum.verify(&data).is_ok() {
         // We are scrubbing and the data is ok.
         // Verify parity.
@@ -289,14 +311,14 @@ where
                 data,
                 faulted: Block(0),
                 repaired: Block(0),
-            }.into())
+            }
+            .into())
         } else {
             // Rewrite bad parity block.
-            let repaired = match await!(inner.vdevs[parity_disk_idx].write_raw(
-                new_parity_block,
-                parity_disk_offset,
-                true
-            )) {
+            let repaired = match await!(inner.vdevs[parity_disk_idx]
+                .write_raw(new_parity_block, parity_disk_offset, true)
+                .into_future())
+            {
                 Ok(()) => faulted,
                 Err(_) => Block(0),
             };
@@ -304,7 +326,8 @@ where
                 data,
                 faulted,
                 repaired,
-            }.into())
+            }
+            .into())
         }
     } else {
         // Every disk returned some data, but the checksum does not match.
@@ -365,11 +388,10 @@ where
             &inner.vdevs[bad_disk_idx],
             size,
         );
-        let repaired = match await!(inner.vdevs[bad_disk_idx].write_raw(
-            repaired_block,
-            bad_disk_offset,
-            true
-        )) {
+        let repaired = match await!(inner.vdevs[bad_disk_idx]
+            .write_raw(repaired_block, bad_disk_offset, true)
+            .into_future())
+        {
             Ok(()) => faulted,
             Err(_) => Block(0),
         };
@@ -377,13 +399,14 @@ where
             data,
             faulted,
             repaired,
-        }.into())
+        }
+        .into())
     }
 }
 
 impl<V: VdevLeafWrite> VdevWrite for Parity1<V> {
-    type Write = UnfailableJoinAllPlusOne<V::WriteRaw, FailedWriteUpdateStats<V>>;
-    type WriteRaw = UnfailableJoinAll<V::WriteRaw, FailedWriteUpdateStats<V>>;
+    type Write = UnfailableJoinAllPlusOne<IntoFuture<V::WriteRaw>, FailedWriteUpdateStats<V>>;
+    type WriteRaw = UnfailableJoinAll<IntoFuture<V::WriteRaw>, FailedWriteUpdateStats<V>>;
 
     fn write(&self, data: Box<[u8]>, offset: Block<u64>) -> Self::Write {
         assert!(data.len() % BLOCK_SIZE == 0);
@@ -403,7 +426,8 @@ impl<V: VdevLeafWrite> VdevWrite for Parity1<V> {
                     SplittableBuffer::from(parity_block),
                     parity_disk_offset,
                     false,
-                ).wrap_unfailable_result(),
+                )
+                .into_future(),
         );
 
         for ((disk, disk_offset), col_length) in
@@ -418,7 +442,8 @@ impl<V: VdevLeafWrite> VdevWrite for Parity1<V> {
                     data.split_off(col_length.to_bytes() as usize),
                     disk_offset,
                     false,
-                ).wrap_unfailable_result(),
+                )
+                .into_future(),
             );
         }
         UnfailableJoinAllPlusOne::new(
@@ -442,7 +467,7 @@ impl<V: VdevLeafWrite> VdevWrite for Parity1<V> {
             .inner
             .vdevs
             .iter()
-            .map(|v| v.write(data.clone(), offset).wrap_unfailable_result())
+            .map(|v| v.write(data.clone(), offset).into_future())
             .collect();
         UnfailableJoinAll::new(
             futures,
@@ -537,7 +562,8 @@ fn col_length_sequence(
             Block(0)
         } else {
             long_col_len - 1
-        })).take(disk_cnt - 1)
+        }))
+        .take(disk_cnt - 1)
 }
 
 fn block_iter(
@@ -577,6 +603,7 @@ mod tests {
     use super::Parity1;
     use checksum::{Builder, Checksum, State, XxHashBuilder};
     use futures::executor::block_on;
+    use futures::TryFutureExt;
     use quickcheck::TestResult;
     use vdev::test::{generate_data, test_writes_are_persistent, FailingLeafVdev, FailureMode};
     use vdev::{Block, Vdev, VdevRead, VdevWrite};
@@ -709,7 +736,7 @@ mod tests {
         disks[0].fail_writes(FailureMode::FailOperation);
         disks[1].fail_writes(FailureMode::FailOperation);
         let vdev = Parity1::new(disks.into_boxed_slice(), String::from("parity1"));
-        assert!(block_on(vdev.write(data, Block(0))).is_err());
+        assert!(block_on(vdev.write(data, Block(0)).into_future()).is_err());
     }
 
     #[quickcheck]
@@ -743,7 +770,7 @@ mod tests {
                 state.ingest(&data);
                 state.finish()
             };
-            assert!(block_on(vdev.write(data, offset)).is_ok());
+            assert!(block_on(vdev.write(data, offset).into_future()).is_ok());
 
             let scrub_result = block_on(vdev.scrub(size, offset, checksum)).unwrap();
             assert!(checksum.verify(&scrub_result.data).is_ok());
