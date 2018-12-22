@@ -65,12 +65,12 @@ where
         T: RangeBounds<K>,
         K: Borrow<[u8]>,
     {
-        let min_key = match range.start() {
+        let min_key = match range.start_bound() {
             Bound::Unbounded => MyBound::Included(Vec::new()),
             Bound::Included(x) => MyBound::Included(x.borrow().to_vec()),
             Bound::Excluded(x) => MyBound::Excluded(x.borrow().to_vec()),
         };
-        let max_key = match range.end() {
+        let max_key = match range.end_bound() {
             Bound::Unbounded => None,
             Bound::Included(x) => Some(x.borrow().to_vec()),
             Bound::Excluded(x) => {
@@ -106,7 +106,8 @@ where
             .map(|&(ref key, _)| match self.min_key {
                 MyBound::Included(ref min_key) => key < min_key,
                 MyBound::Excluded(ref min_key) => key <= min_key,
-            }).unwrap_or_default()
+            })
+            .unwrap_or_default()
         {
             self.buffer.pop_front().unwrap();
         }
@@ -225,7 +226,8 @@ where
             .skip_while(|&(ref key, _)| match *left_pivot_key {
                 None => false,
                 Some(ref min_key) => key < min_key,
-            }).take_while(|&(ref key, _)| match *right_pivot_key {
+            })
+            .take_while(|&(ref key, _)| match *right_pivot_key {
                 None => true,
                 Some(ref max_key) => key <= max_key,
             });

@@ -251,10 +251,10 @@ where
 
     /// Will be called when `or` is not in cache but was modified.
     /// Resolves two cases:
-    ///     - Previous write back (`Modified(_)`)
-    ///       Will change `or` to `InWriteback(_)`.
-    ///     - Previous eviction after write back (`InWriteback(_)`)
-    ///       Will change `or` to `Unmodified(_)`.
+    ///     - Previous write back (`Modified(_)`) Will change `or` to
+    ///       `InWriteback(_)`.
+    ///     - Previous eviction after write back (`InWriteback(_)`) Will change
+    ///       `or` to `Unmodified(_)`.
     fn fix_or(&self, or: &mut <Self as DmlBase>::ObjectRef) {
         match *or {
             ObjectRef::Unmodified(_) => unreachable!(),
@@ -469,7 +469,8 @@ where
         }
         if !was_present {
             // The object has been `stolen`.  Notify the handler.
-            let actual_size = self.pool
+            let actual_size = self
+                .pool
                 .actual_size(obj_ptr.offset.disk_id() as u16, obj_ptr.size);
             self.handler.copy_on_write(
                 obj_ptr.offset,
@@ -502,7 +503,8 @@ where
 
             if x.is_none() {
                 let segment_id = SegmentId::get(DiskOffset::new(disk_id as usize, Block(0)));
-                let allocator = self.handler
+                let allocator = self
+                    .handler
                     .get_allocation_bitmap(segment_id, self)
                     .chain_err(|| ErrorKind::HandlerError)?;
                 *x = Some((segment_id, allocator));
@@ -524,7 +526,8 @@ where
                 if next_segment_id == first_seen_segment_id {
                     bail!(ErrorKind::OutOfSpaceError);
                 }
-                *allocator = self.handler
+                *allocator = self
+                    .handler
                     .get_allocation_bitmap(next_segment_id, self)
                     .chain_err(|| ErrorKind::HandlerError)?;
                 *segment_id = next_segment_id;
@@ -545,7 +548,8 @@ where
         let size = size * num_disks as u32;
         let segment_id = SegmentId::get(disk_offset);
         let mut x = self.allocation_data[disk_id as usize].lock();
-        let mut allocator = self.handler
+        let mut allocator = self
+            .handler
             .get_allocation_bitmap(segment_id, self)
             .chain_err(|| ErrorKind::HandlerError)?;
         if allocator.allocate_at(size.as_u32(), SegmentId::get_block_offset(disk_offset)) {
@@ -822,7 +826,8 @@ where
     fn finish_prefetch(&self, p: Self::Prefetch) -> Result<(), Error> {
         let (ptr, compressed_data) = block_on(p)?;
         let object: H::Object = {
-            let data = ptr.compression
+            let data = ptr
+                .compression
                 .decompress(compressed_data)
                 .chain_err(|| ErrorKind::DecompressionError)?;
             Object::unpack(data).chain_err(|| ErrorKind::DeserializationError)?

@@ -92,7 +92,8 @@ where
         data,
         faulted: size * faulted,
         repaired: size * total_repaired,
-    }.into())
+    }
+    .into())
 }
 
 impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrite> VdevRead<C>

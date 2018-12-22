@@ -48,8 +48,10 @@ impl<N: StaticSize> Size for ChildBuffer<N> {
 
 impl<N: StaticSize> ChildBuffer<N> {
     pub fn actual_size(&self) -> usize {
-        Self::static_size() + N::size()
-            + self.buffer
+        Self::static_size()
+            + N::size()
+            + self
+                .buffer
                 .iter()
                 .map(|(key, msgs)| key.size() + msgs.size())
                 .sum::<usize>()
@@ -193,6 +195,7 @@ mod tests {
     use super::*;
     use bincode::serialized_size;
     use quickcheck::{Arbitrary, Gen};
+    use rand::Rng;
     use tree::message_action::DefaultMessageActionMsg;
 
     impl<N: Clone> Clone for ChildBuffer<N> {
@@ -207,7 +210,8 @@ mod tests {
 
     impl<N: PartialEq> PartialEq for ChildBuffer<N> {
         fn eq(&self, other: &Self) -> bool {
-            self.buffer_entries_size == other.buffer_entries_size && self.buffer == other.buffer
+            self.buffer_entries_size == other.buffer_entries_size
+                && self.buffer == other.buffer
                 && *self.node_pointer.read() == *other.node_pointer.read()
         }
     }
@@ -261,20 +265,16 @@ mod tests {
     fn check_split_at(mut child_buffer: ChildBuffer<()>, pivot_key: CowBytes) {
         let this = child_buffer.clone();
         let mut sibling = child_buffer.split_at(&pivot_key, ());
-        assert!(
-            child_buffer
-                .buffer
-                .iter()
-                .next_back()
-                .map_or(true, |(key, value)| key.clone() <= pivot_key)
-        );
-        assert!(
-            sibling
-                .buffer
-                .iter()
-                .next()
-                .map_or(true, |(key, value)| key.clone() > pivot_key)
-        );
+        assert!(child_buffer
+            .buffer
+            .iter()
+            .next_back()
+            .map_or(true, |(key, value)| key.clone() <= pivot_key));
+        assert!(sibling
+            .buffer
+            .iter()
+            .next()
+            .map_or(true, |(key, value)| key.clone() > pivot_key));
         let (mut buffer, _) = child_buffer.take();
         buffer.append(&mut sibling.take().0);
         assert_eq!(this.buffer, buffer);

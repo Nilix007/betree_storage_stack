@@ -26,7 +26,8 @@ impl<T> Size for InternalNode<T> {
 impl<N: StaticSize> InternalNode<ChildBuffer<N>> {
     pub(super) fn actual_size(&self) -> usize {
         28 + self.pivot.iter().map(Size::size).sum::<usize>()
-            + self.children
+            + self
+                .children
                 .iter()
                 .map(|child| child.actual_size())
                 .sum::<usize>()
@@ -216,7 +217,7 @@ impl<N: StaticSize> InternalNode<ChildBuffer<N>> {
             let entries_size = &mut self.entries_size;
             dead.extend(
                 self.children
-                    .drain(dead_start_idx..dead_end_idx + 1)
+                    .drain(dead_start_idx..=dead_end_idx)
                     .map(|child| {
                         *entries_size -= child.size();
                         child.node_pointer.into_inner()
@@ -295,7 +296,8 @@ impl<N> InternalNode<ChildBuffer<N>> {
         let child_idx = {
             let size = self.size();
             let fanout = self.fanout();
-            let (child_idx, child) = self.children
+            let (child_idx, child) = self
+                .children
                 .iter()
                 .enumerate()
                 .max_by_key(|&(_, child)| child.buffer_size())
@@ -433,6 +435,7 @@ mod tests {
     use super::*;
     use bincode::serialized_size;
     use quickcheck::{Arbitrary, Gen, TestResult};
+    use rand::Rng;
     use serde::Serialize;
     use tree::message_action::DefaultMessageActionMsg;
     use tree::DefaultMessageAction;

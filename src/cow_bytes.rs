@@ -288,6 +288,7 @@ impl Deref for SlicedCowBytes {
 mod tests {
     use super::{Arc, CowBytes};
     use quickcheck::{Arbitrary, Gen};
+    use rand::Rng;
 
     impl Arbitrary for CowBytes {
         fn arbitrary<G: Gen>(g: &mut G) -> Self {

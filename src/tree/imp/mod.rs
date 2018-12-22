@@ -370,7 +370,7 @@ where
         T: RangeBounds<K>,
         K: Borrow<[u8]>,
     {
-        if let (Bound::Unbounded, Bound::Unbounded) = (range.start(), range.end()) {
+        if let (Bound::Unbounded, Bound::Unbounded) = (range.start_bound(), range.end_bound()) {
             let np = self.dml.insert(Node::empty_leaf(), self.tree_id());
             let old_root_np = replace(&mut *self.inner.borrow().root_node.write(), np);
             return self.remove_subtree(old_root_np);
@@ -378,7 +378,7 @@ where
 
         let start_box;
         let end_box;
-        let start = match range.start() {
+        let start = match range.start_bound() {
             Bound::Unbounded => &[] as &[_],
             Bound::Excluded(x) => {
                 let mut v = x.borrow().to_vec();
@@ -388,7 +388,7 @@ where
             }
             Bound::Included(x) => x.borrow(),
         };
-        let end = match range.end() {
+        let end = match range.end_bound() {
             Bound::Unbounded => None,
             Bound::Excluded(x) => Some(x.borrow()),
             Bound::Included(x) => {

@@ -118,7 +118,7 @@ impl SplittableBuffer {
 
     /// Returns the underlying buffer if it has exactly one reference.
     pub fn try_unwrap(self) -> Result<Box<[u8]>, Arc<Box<[u8]>>> {
-        Arc::try_unwrap(self.inner.into_inner())
+        Arc::try_unwrap(self.inner.into_owner())
     }
 }
 

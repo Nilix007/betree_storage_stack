@@ -21,7 +21,8 @@ impl Size for LeafNode {
 }
 impl LeafNode {
     pub(super) fn actual_size(&self) -> usize {
-        4 + self.entries
+        4 + self
+            .entries
             .iter()
             .map(|(key, value)| key.size() + value.size())
             .sum::<usize>()
@@ -34,7 +35,8 @@ impl<'a> FromIterator<(&'a [u8], SlicedCowBytes)> for LeafNode {
         T: IntoIterator<Item = (&'a [u8], SlicedCowBytes)>,
     {
         let mut entries_size = 0;
-        let entries = iter.into_iter()
+        let entries = iter
+            .into_iter()
             .map(|(key, value)| {
                 entries_size += 16 + key.len() + value.len();
                 (key.into(), value)
@@ -199,6 +201,7 @@ impl LeafNode {
 mod tests {
     use super::{BTreeMap, CowBytes, LeafNode, Size, SlicedCowBytes};
     use quickcheck::{Arbitrary, Gen, TestResult};
+    use rand::Rng;
     use tree::imp::packed::PackedMap;
     use tree::message_action::DefaultMessageActionMsg;
     use tree::DefaultMessageAction;

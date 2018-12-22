@@ -64,7 +64,7 @@ impl PackedMap {
     fn keys(&self) -> &[Data] {
         unsafe {
             let ptr = self.data.as_ptr();
-            let start = ptr.offset(size_of::<Header>() as isize) as *const Data;
+            let start = ptr.add(size_of::<Header>()) as *const Data;
             from_raw_parts(start, self.entry_count as usize)
         }
     }
@@ -72,9 +72,9 @@ impl PackedMap {
     fn values(&self) -> &[Data] {
         unsafe {
             let ptr = self.data.as_ptr();
-            let start = ptr.offset(
-                (size_of::<Header>() + size_of::<Data>() * self.entry_count as usize) as isize,
-            ) as *const Data;
+            let start = ptr
+                .add((size_of::<Header>() + size_of::<Data>() * self.entry_count as usize))
+                as *const Data;
             from_raw_parts(start, self.entry_count as usize)
         }
     }

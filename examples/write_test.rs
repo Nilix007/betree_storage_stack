@@ -36,7 +36,7 @@ use byteorder::{BigEndian, ByteOrder, NativeEndian};
 use clap::{App, Arg};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use parking_lot::Mutex;
-use rand::{Rng, SeedableRng, XorShiftRng};
+use rand::{RngCore, SeedableRng, XorShiftRng};
 use scoped_threadpool::Pool;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -130,7 +130,9 @@ impl KeyGenerator for RandomKeyGenerator {
         "random"
     }
     fn new(idx: usize, _shift: usize) -> Self {
-        RandomKeyGenerator(XorShiftRng::from_seed([1, 0, 0, idx as u32]))
+        RandomKeyGenerator(XorShiftRng::from_seed(unsafe {
+            ::std::mem::transmute([1, 0, 0, idx as u32])
+        }))
     }
 }
 
@@ -397,7 +399,8 @@ fn main() {
         run::<SequentialKeyGenerator>(
             threads, file_size, block_size, cache_size, iterations, sync, write, verify,
         )
-    }.unwrap();
+    }
+    .unwrap();
 }
 
 fn run<K: KeyGenerator>(
@@ -658,7 +661,8 @@ where
 {
     fn inner_loop(&self, key: &[u8; 4]) -> Result<(), Box<Error>> {
         //        debug!("Key: {:?}", &key);
-        let data = self.tree
+        let data = self
+            .tree
             .get(&key[..])?
             .expect(&format!("Key not found: {:?}", &key));
         assert!(data.len() as u64 == self.block_size);

@@ -187,6 +187,7 @@ mod tests {
     use super::{DefaultMessageAction, Upsert};
     use cow_bytes::SlicedCowBytes;
     use quickcheck::{Arbitrary, Gen};
+    use rand::Rng;
 
     #[derive(Debug, Clone)]
     pub struct DefaultMessageActionMsg(pub SlicedCowBytes);

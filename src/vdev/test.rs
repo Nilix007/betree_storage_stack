@@ -9,7 +9,7 @@ use futures::future::{ready, MapOk, Ready};
 use futures::prelude::*;
 use parking_lot::Mutex;
 use quickcheck::{Arbitrary, Gen};
-use rand::{Rng, SeedableRng, XorShiftRng};
+use rand::{Rng, RngCore, SeedableRng, XorShiftRng};
 use seqlock::SeqLock;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -269,7 +269,7 @@ pub fn generate_data(idx: usize, offset: Block<u64>, size: Block<u32>) -> Box<[u
         offset.as_u64() as u32,
         (offset.as_u64() >> 32) as u32,
     ];
-    let mut rng = XorShiftRng::from_seed(seed);
+    let mut rng = XorShiftRng::from_seed(unsafe { ::std::mem::transmute(seed) });
 
     let mut data = vec![0; size.to_bytes() as usize].into_boxed_slice();
     rng.fill_bytes(&mut data);
