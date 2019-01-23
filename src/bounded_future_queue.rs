@@ -25,7 +25,7 @@ where
     type Error = F::Error;
 
     fn try_poll(self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Result<Self::Ok, Self::Error>> {
-        let this = unsafe { Pin::get_mut_unchecked(self) };
+        let this = unsafe { Pin::get_unchecked_mut(self) };
         let f = unsafe { Pin::new_unchecked(&mut this.future) };
         try_ready!(f.try_poll(lw));
         Poll::Ready(Ok(this.key.take().unwrap()))

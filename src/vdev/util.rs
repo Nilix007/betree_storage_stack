@@ -24,7 +24,7 @@ impl<F: Future<Output = Result<(), E>>, G: Failed, E> TryFuture for UnfailableJo
     type Error = E;
 
     fn try_poll(self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Result<Self::Ok, Self::Error>> {
-        let this = unsafe { Pin::get_mut_unchecked(self) };
+        let this = unsafe { Pin::get_unchecked_mut(self) };
         let f = unsafe { Pin::new_unchecked(&mut this.future) };
         let results = ready!(f.poll(lw));
         for result in results {
@@ -56,7 +56,7 @@ impl<F: Future<Output = Result<(), E>>, G: Failed, E> TryFuture for UnfailableJo
     type Error = E;
 
     fn try_poll(self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Result<Self::Ok, Self::Error>> {
-        let this = unsafe { Pin::get_mut_unchecked(self) };
+        let this = unsafe { Pin::get_unchecked_mut(self) };
         let f = unsafe { Pin::new_unchecked(&mut this.future) };
         let results = ready!(f.poll(lw));
         let mut error_occurred = false;
