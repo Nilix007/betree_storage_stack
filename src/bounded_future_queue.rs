@@ -5,7 +5,7 @@ use futures::executor::block_on;
 use futures::future::{ok, ready, IntoFuture};
 use futures::prelude::*;
 use futures::stream::FuturesUnordered;
-use futures::task::LocalWaker;
+use futures::task::Waker;
 use futures::{try_ready, Poll, TryFuture};
 use std::borrow::Borrow;
 use std::collections::HashSet;
@@ -24,10 +24,10 @@ where
     type Ok = K;
     type Error = F::Error;
 
-    fn try_poll(self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Result<Self::Ok, Self::Error>> {
+    fn try_poll(self: Pin<&mut Self>, waker: &Waker) -> Poll<Result<Self::Ok, Self::Error>> {
         let this = unsafe { Pin::get_unchecked_mut(self) };
         let f = unsafe { Pin::new_unchecked(&mut this.future) };
-        try_ready!(f.try_poll(lw));
+        try_ready!(f.try_poll(waker));
         Poll::Ready(Ok(this.key.take().unwrap()))
     }
 }

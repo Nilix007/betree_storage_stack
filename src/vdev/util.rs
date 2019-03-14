@@ -1,8 +1,7 @@
 use futures::prelude::*;
 use futures::ready;
 use futures::stream::{futures_unordered, Collect, FuturesUnordered};
-use futures::task::LocalWaker;
-use futures::task::Poll;
+use futures::task::{Poll, Waker};
 use std::pin::Pin;
 
 pub struct UnfailableJoinAll<F: Future, G: Failed> {
@@ -23,10 +22,10 @@ impl<F: Future<Output = Result<(), E>>, G: Failed, E> TryFuture for UnfailableJo
     type Ok = ();
     type Error = E;
 
-    fn try_poll(self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Result<Self::Ok, Self::Error>> {
+    fn try_poll(self: Pin<&mut Self>, waker: &Waker) -> Poll<Result<Self::Ok, Self::Error>> {
         let this = unsafe { Pin::get_unchecked_mut(self) };
         let f = unsafe { Pin::new_unchecked(&mut this.future) };
-        let results = ready!(f.poll(lw));
+        let results = ready!(f.poll(waker));
         for result in results {
             if let Err(e) = result {
                 this.fail.take().unwrap().failed();
@@ -55,10 +54,10 @@ impl<F: Future<Output = Result<(), E>>, G: Failed, E> TryFuture for UnfailableJo
     type Ok = ();
     type Error = E;
 
-    fn try_poll(self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Result<Self::Ok, Self::Error>> {
+    fn try_poll(self: Pin<&mut Self>, waker: &Waker) -> Poll<Result<Self::Ok, Self::Error>> {
         let this = unsafe { Pin::get_unchecked_mut(self) };
         let f = unsafe { Pin::new_unchecked(&mut this.future) };
-        let results = ready!(f.poll(lw));
+        let results = ready!(f.poll(waker));
         let mut error_occurred = false;
         for result in results {
             if let Err(e) = result {
