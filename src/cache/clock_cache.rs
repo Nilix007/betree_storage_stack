@@ -274,7 +274,7 @@ impl<K: Clone + Eq + Hash + Sync + Send, V: Sync + Send + 'static> Cache for Clo
                 // - The referenced bit of the cache entry is false
                 // - The eviction callback signals a successful eviction.
 
-                if let Some(mut entry) = Arc::get_mut(entry) {
+                if let Some(entry) = Arc::get_mut(entry) {
                     // reset reference bit
                     let was_referenced = *entry.referenced.get_mut();
                     *entry.referenced.get_mut() = false;

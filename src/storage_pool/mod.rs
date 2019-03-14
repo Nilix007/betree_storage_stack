@@ -2,7 +2,8 @@
 //! which manages vdevs and features a write-back queue with read-write
 //! ordering.
 
-use checksum::Checksum;
+use crate::checksum::Checksum;
+use crate::vdev::{Block, Error as VdevError};
 use futures::executor::block_on;
 use futures::prelude::*;
 use futures::TryFuture;
@@ -10,7 +11,6 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::fmt;
 use std::io;
-use vdev::{Block, Error as VdevError};
 
 // TODO read-only storage pool layer?
 // TODO Clone necessary?

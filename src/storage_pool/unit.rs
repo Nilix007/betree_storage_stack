@@ -1,6 +1,7 @@
 use super::{Configuration, DiskOffset, StoragePoolLayer};
-use bounded_future_queue::BoundedFutureQueue;
-use checksum::Checksum;
+use crate::bounded_future_queue::BoundedFutureQueue;
+use crate::checksum::Checksum;
+use crate::vdev::{Block, Error as VdevError, VdevBoxed};
 use futures::executor::{block_on, ThreadPool};
 use futures::future::FutureObj;
 use futures::prelude::*;
@@ -9,7 +10,6 @@ use futures::task::SpawnExt;
 use parking_lot::Mutex;
 use std::io;
 use std::sync::Arc;
-use vdev::{Block, Error as VdevError, VdevBoxed};
 
 /// Actual implementation of the `StoragePoolLayer`.
 #[derive(Clone)]

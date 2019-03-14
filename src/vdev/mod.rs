@@ -2,7 +2,7 @@
 //! *vdev*)
 //! that are built on top of storage devices.
 
-use checksum::Checksum;
+use crate::checksum::Checksum;
 use futures::future::{FutureObj, TryFutureExt};
 use futures::TryFuture;
 use std::sync::atomic::{AtomicU64, Ordering};

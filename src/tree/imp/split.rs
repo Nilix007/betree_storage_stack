@@ -1,12 +1,12 @@
 use super::child_buffer::ChildBuffer;
 use super::internal::TakeChildBuffer;
 use super::{Inner, Node, Tree};
-use cache::AddSize;
-use data_management::{HandlerDml, ObjectRef};
-use size::Size;
+use crate::cache::AddSize;
+use crate::data_management::{HandlerDml, ObjectRef};
+use crate::size::Size;
+use crate::tree::errors::*;
+use crate::tree::MessageAction;
 use std::borrow::Borrow;
-use tree::errors::*;
-use tree::MessageAction;
 
 impl<X, R, M, I> Tree<X, M, I>
 where

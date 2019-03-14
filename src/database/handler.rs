@@ -2,20 +2,20 @@ use super::errors::*;
 use super::{
     dead_list_key, DatasetId, DeadListData, Generation, Object, ObjectPointer, ObjectRef, TreeInner,
 };
-use allocator::{Action, SegmentAllocator, SegmentId, SEGMENT_SIZE};
-use atomic_option::AtomicOption;
+use crate::allocator::{Action, SegmentAllocator, SegmentId, SEGMENT_SIZE};
+use crate::atomic_option::AtomicOption;
+use crate::cow_bytes::SlicedCowBytes;
+use crate::data_management::{self, HandlerDml};
+use crate::storage_pool::DiskOffset;
+use crate::tree::{DefaultMessageAction, Tree, TreeBaseLayer};
+use crate::vdev::Block;
 use byteorder::{BigEndian, ByteOrder};
-use cow_bytes::SlicedCowBytes;
-use data_management::{self, HandlerDml};
 use owning_ref::OwningRef;
 use parking_lot::{Mutex, RwLock};
 use seqlock::SeqLock;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use storage_pool::DiskOffset;
-use tree::{DefaultMessageAction, Tree, TreeBaseLayer};
-use vdev::Block;
 
 /// Returns a message for updating the allocation bitmap.
 pub fn update_allocation_bitmap_msg(
@@ -130,7 +130,8 @@ impl data_management::Handler<ObjectRef> for Handler {
     {
         let key = segment_id_to_key(id);
 
-        let mut segment = self.current_root_tree(dmu)
+        let mut segment = self
+            .current_root_tree(dmu)
             .get(&key[..])?
             .map(|b| b.to_vec())
             .unwrap_or_default();
@@ -168,10 +169,12 @@ impl data_management::Handler<ObjectRef> for Handler {
         generation: Generation,
         dataset_id: DatasetId,
     ) {
-        if self.last_snapshot_generation
+        if self
+            .last_snapshot_generation
             .read()
             .get(&dataset_id)
-            .cloned() < Some(generation)
+            .cloned()
+            < Some(generation)
         {
             // Deallocate
             let key = &segment_id_to_key(SegmentId::get(offset)) as &[_];
@@ -184,8 +187,9 @@ impl data_management::Handler<ObjectRef> for Handler {
             let data = DeadListData {
                 birth: generation,
                 size,
-            }.pack()
-                .unwrap();
+            }
+            .pack()
+            .unwrap();
 
             let msg = DefaultMessageAction::insert_msg(&data);
             self.delayed_messages.lock().push((key.into(), msg));

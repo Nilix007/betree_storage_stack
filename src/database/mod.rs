@@ -1,25 +1,25 @@
 //! This module provides the Database Layer.
-use atomic_option::AtomicOption;
+use crate::atomic_option::AtomicOption;
+use crate::cache::ClockCache;
+use crate::checksum::{XxHash, XxHashBuilder};
+use crate::compression;
+use crate::cow_bytes::SlicedCowBytes;
+use crate::data_management::{self, Dmu, HandlerDml};
+use crate::size::StaticSize;
+use crate::storage_pool::{Configuration, DiskOffset, StoragePoolLayer, StoragePoolUnit};
+use crate::tree::{DefaultMessageAction, Inner as TreeInner, Node, Tree, TreeBaseLayer, TreeLayer};
+use crate::vdev::Block;
 use bincode::{deserialize, serialize_into};
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
-use cache::ClockCache;
-use checksum::{XxHash, XxHashBuilder};
-use compression;
-use cow_bytes::SlicedCowBytes;
-use data_management::{self, Dmu, HandlerDml};
 use parking_lot::{Mutex, RwLock};
 use seqlock::SeqLock;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use size::StaticSize;
 use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::mem::replace;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use storage_pool::{Configuration, DiskOffset, StoragePoolLayer, StoragePoolUnit};
-use tree::{DefaultMessageAction, Inner as TreeInner, Node, Tree, TreeBaseLayer, TreeLayer};
-use vdev::Block;
 
 mod dataset;
 mod errors;
@@ -184,14 +184,16 @@ impl Database {
         }
         let root_ptr = loop {
             self.flush_delayed_messages()?;
-            let allocations_before = self.root_tree
+            let allocations_before = self
+                .root_tree
                 .dmu()
                 .handler()
                 .allocations
                 .load(Ordering::Acquire);
             info!("Sync: syncing root tree");
             let root_ptr = self.root_tree.sync()?;
-            let allocations_after = self.root_tree
+            let allocations_after = self
+                .root_tree
                 .dmu()
                 .handler()
                 .allocations
@@ -323,8 +325,9 @@ impl DeadListData {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize,
-         Deserialize)]
+#[derive(
+    Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 struct DatasetId(u64);
 
 impl DatasetId {

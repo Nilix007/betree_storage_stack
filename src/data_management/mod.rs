@@ -1,19 +1,19 @@
 //! This module provides the Data Management Layer
 //! which handles user-defined objects and incldues caching and write back.
 
-use allocator::{Action, SegmentAllocator, SegmentId};
-use cache::AddSize;
+use crate::allocator::{Action, SegmentAllocator, SegmentId};
+use crate::cache::AddSize;
+use crate::size::{Size, StaticSize};
+use crate::storage_pool::DiskOffset;
+use crate::vdev::Block;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use size::{Size, StaticSize};
 use stable_deref_trait::StableDeref;
 use std::error;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::io::{self, Write};
 use std::ops::DerefMut;
-use storage_pool::DiskOffset;
-use vdev::Block;
 
 /// Marker trait for plain old data types
 pub trait PodType:

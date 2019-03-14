@@ -1,9 +1,12 @@
 use super::errors::*;
 use super::{DmlBase, Handler, HandlerTypes, Object, PodType};
-use allocator::{Action, SegmentAllocator, SegmentId};
-use cache::{AddSize, Cache, ChangeKeyError, RemoveError};
-use checksum::{Builder, Checksum, State};
-use compression::{Compress, Compression};
+use crate::allocator::{Action, SegmentAllocator, SegmentId};
+use crate::cache::{AddSize, Cache, ChangeKeyError, RemoveError};
+use crate::checksum::{Builder, Checksum, State};
+use crate::compression::{Compress, Compression};
+use crate::size::{SizeMut, StaticSize};
+use crate::storage_pool::{DiskOffset, StoragePoolLayer};
+use crate::vdev::{Block, BLOCK_SIZE};
 use futures::executor::block_on;
 use futures::future::{ok, FutureObj};
 use futures::prelude::*;
@@ -11,15 +14,12 @@ use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use serde::de::DeserializeOwned;
 use serde::ser::Error as SerError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use size::{SizeMut, StaticSize};
 use stable_deref_trait::StableDeref;
 use std::collections::HashMap;
 use std::mem::{replace, transmute, ManuallyDrop};
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread::yield_now;
-use storage_pool::{DiskOffset, StoragePoolLayer};
-use vdev::{Block, BLOCK_SIZE};
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 pub struct ModifiedObjectId(u64);

@@ -5,7 +5,7 @@ error_chain! {
     }
     foreign_links {
         Io(::std::io::Error);
-        ChecksumError(::checksum::ChecksumError);
+        ChecksumError(crate::checksum::ChecksumError);
     }
     errors {
         ReadError(id: String)

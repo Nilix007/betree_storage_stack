@@ -4,7 +4,7 @@ error_chain! {
         Error, ErrorKind, ResultExt;
     }
     foreign_links {
-        DmuError(::data_management::Error);
+        DmuError(crate::data_management::Error);
     }
     errors {
     }

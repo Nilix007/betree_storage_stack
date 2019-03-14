@@ -2,10 +2,11 @@ use self::flush::Ref;
 use self::node::GetResult;
 use super::errors::*;
 use super::layer::{TreeBaseLayer, TreeLayer};
-use cache::AddSize;
-use cow_bytes::CowBytes;
-use cow_bytes::SlicedCowBytes;
-use data_management::{Dml, DmlBase, HandlerDml, ObjectRef};
+use crate::cache::AddSize;
+use crate::cow_bytes::CowBytes;
+use crate::cow_bytes::SlicedCowBytes;
+use crate::data_management::{Dml, DmlBase, HandlerDml, ObjectRef};
+use crate::tree::MessageAction;
 use owning_ref::OwningRef;
 use parking_lot::{RwLock, RwLockWriteGuard};
 use std::borrow::Borrow;
@@ -13,7 +14,6 @@ use std::collections::Bound;
 use std::marker::PhantomData;
 use std::mem::replace;
 use std::ops::RangeBounds;
-use tree::MessageAction;
 
 #[derive(Debug)]
 enum FillUpResult {
@@ -220,7 +220,7 @@ where
                         self.dml.remove(np);
                     }
                 } else {
-                    for mut np in dead {
+                    for np in dead {
                         self.remove_subtree(np)?;
                     }
                 }

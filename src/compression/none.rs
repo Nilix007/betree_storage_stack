@@ -1,4 +1,4 @@
-use size::StaticSize;
+use crate::size::StaticSize;
 use std::io;
 
 /// No-op compression.

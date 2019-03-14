@@ -1,12 +1,12 @@
-use cow_bytes::{CowBytes, SlicedCowBytes};
+use crate::cow_bytes::{CowBytes, SlicedCowBytes};
+use crate::size::{Size, StaticSize};
+use crate::tree::MessageAction;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use size::{Size, StaticSize};
 use std::borrow::Borrow;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, Bound};
 use std::mem::replace;
-use tree::MessageAction;
 
 /// A buffer for messages that belong to a child of a tree node.
 #[derive(Debug, Serialize, Deserialize)]
@@ -193,10 +193,10 @@ impl<N> ChildBuffer<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tree::message_action::DefaultMessageActionMsg;
     use bincode::serialized_size;
     use quickcheck::{Arbitrary, Gen};
     use rand::Rng;
-    use tree::message_action::DefaultMessageActionMsg;
 
     impl<N: Clone> Clone for ChildBuffer<N> {
         fn clone(&self) -> Self {
@@ -269,12 +269,12 @@ mod tests {
             .buffer
             .iter()
             .next_back()
-            .map_or(true, |(key, value)| key.clone() <= pivot_key));
+            .map_or(true, |(key, _value)| key.clone() <= pivot_key));
         assert!(sibling
             .buffer
             .iter()
             .next()
-            .map_or(true, |(key, value)| key.clone() > pivot_key));
+            .map_or(true, |(key, _value)| key.clone() > pivot_key));
         let (mut buffer, _) = child_buffer.take();
         buffer.append(&mut sibling.take().0);
         assert_eq!(this.buffer, buffer);

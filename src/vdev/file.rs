@@ -3,7 +3,7 @@ use super::util::alloc_uninitialized;
 use super::{
     AtomicStatistics, Block, ScrubResult, Statistics, Vdev, VdevLeafRead, VdevLeafWrite, VdevRead,
 };
-use checksum::Checksum;
+use crate::checksum::Checksum;
 use futures::future::{lazy, ready, FutureObj, Ready};
 use futures::prelude::*;
 use libc::{c_ulong, ioctl};

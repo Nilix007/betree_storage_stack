@@ -47,7 +47,8 @@ impl<T: Size> Size for Vec<T> {
 
 impl<K: Size, V: Size> Size for BTreeMap<K, V> {
     fn size(&self) -> usize {
-        8 + self.iter()
+        8 + self
+            .iter()
             .map(|(key, value)| key.size() + value.size())
             .sum::<usize>()
     }

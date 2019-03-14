@@ -4,7 +4,7 @@ error_chain! {
         Error, ErrorKind, ResultExt;
     }
     foreign_links {
-        VdevError(::vdev::Error);
+        VdevError(crate::vdev::Error);
     }
     errors {
         DecompressionError

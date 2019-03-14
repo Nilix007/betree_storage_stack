@@ -1,8 +1,8 @@
 //! This module provides a `Checksum` trait for verifying data integrity.
 
+use crate::size::{Size, StaticSize};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use size::{Size, StaticSize};
 use std::error::Error;
 use std::fmt;
 use std::hash::Hasher;

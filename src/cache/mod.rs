@@ -33,7 +33,6 @@ pub enum RemoveError {
 /// - pinned entries (short-lived only)
 /// - variable sized entries
 /// - entries may change their size
-///
 pub trait Cache: Send + Sync {
     /// The key type for the cache.
     type Key: Eq + Hash;

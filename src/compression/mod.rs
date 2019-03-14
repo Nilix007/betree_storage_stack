@@ -2,9 +2,9 @@
 //! decompressing data.
 //! `None` and `Lz4` are provided as implementation.
 
+use crate::size::Size;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use size::Size;
 use std::fmt::Debug;
 use std::io::{self, Write};
 

@@ -4,8 +4,8 @@ use super::{
     AtomicStatistics, Block, ScrubResult, Statistics, Vdev, VdevLeafRead, VdevLeafWrite, VdevRead,
     VdevWrite, BLOCK_SIZE,
 };
-use buffer::{new_buffer, SplittableBuffer, SplittableMutBuffer};
-use checksum::Checksum;
+use crate::buffer::{new_buffer, SplittableBuffer, SplittableMutBuffer};
+use crate::checksum::Checksum;
 use futures::future::{ready, FutureObj, IntoFuture};
 use futures::prelude::*;
 use futures::stream::{futures_ordered, futures_unordered};
@@ -601,12 +601,14 @@ fn block_iter(
 #[cfg(test)]
 mod tests {
     use super::Parity1;
-    use checksum::{Builder, Checksum, State, XxHashBuilder};
+    use crate::checksum::{Builder, Checksum, State, XxHashBuilder};
+    use crate::vdev::test::{
+        generate_data, test_writes_are_persistent, FailingLeafVdev, FailureMode,
+    };
+    use crate::vdev::{Block, Vdev, VdevRead, VdevWrite};
     use futures::executor::block_on;
     use futures::TryFutureExt;
     use quickcheck::TestResult;
-    use vdev::test::{generate_data, test_writes_are_persistent, FailingLeafVdev, FailureMode};
-    use vdev::{Block, Vdev, VdevRead, VdevWrite};
 
     fn build_parity_vdev(
         disk_size: Block<u32>,

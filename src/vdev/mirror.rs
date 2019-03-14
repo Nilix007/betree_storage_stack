@@ -4,8 +4,8 @@ use super::{
     AtomicStatistics, Block, ScrubResult, Statistics, Vdev, VdevLeafRead, VdevLeafWrite, VdevRead,
     VdevWrite,
 };
-use buffer::SplittableBuffer;
-use checksum::Checksum;
+use crate::buffer::SplittableBuffer;
+use crate::checksum::Checksum;
 use futures::future::{ready, FutureObj, IntoFuture};
 use futures::prelude::*;
 use futures::stream::{futures_ordered, futures_unordered};
@@ -296,11 +296,13 @@ impl<V: Vdev> Vdev for Mirror<V> {
 #[cfg(test)]
 mod tests {
     use super::Mirror;
-    use checksum::{Builder, Checksum, State, XxHashBuilder};
+    use crate::checksum::{Builder, Checksum, State, XxHashBuilder};
+    use crate::vdev::test::{
+        generate_data, test_writes_are_persistent, FailingLeafVdev, FailureMode,
+    };
+    use crate::vdev::{Block, Vdev, VdevRead, VdevWrite};
     use futures::executor::block_on;
     use quickcheck::TestResult;
-    use vdev::test::{generate_data, test_writes_are_persistent, FailingLeafVdev, FailureMode};
-    use vdev::{Block, Vdev, VdevRead, VdevWrite};
 
     fn build_mirror_vdev(
         disk_size: Block<u32>,

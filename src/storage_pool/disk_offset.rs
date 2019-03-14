@@ -1,6 +1,6 @@
-use size::StaticSize;
+use crate::size::StaticSize;
+use crate::vdev::Block;
 use std::fmt;
-use vdev::Block;
 
 /// 12-bit disk ID, 52-bit block offset (see
 /// [`BLOCK_SIZE`](../vdev/constant.BLOCK_SIZE.html))

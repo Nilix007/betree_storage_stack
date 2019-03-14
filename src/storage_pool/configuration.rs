@@ -1,5 +1,6 @@
 //! Storage Pool configuration.
-use checksum::Checksum;
+use crate::checksum::Checksum;
+use crate::vdev::{self, Vdev as VdevTrait, VdevBoxed};
 use itertools::Itertools;
 use libc;
 use ref_slice::ref_slice;
@@ -10,7 +11,6 @@ use std::io;
 use std::iter::FromIterator;
 use std::os::unix::io::AsRawFd;
 use std::path::PathBuf;
-use vdev::{self, Vdev as VdevTrait, VdevBoxed};
 
 /// `Configuration` type for `StoragePoolUnit`.
 #[derive(Debug, Serialize, Deserialize)]
@@ -83,7 +83,8 @@ impl Configuration {
                 "parity" | "parity1" => Vdev::Parity1,
                 _ => bail!(ErrorKind::InvalidKeyword),
             };
-            let leaves = iter.peeking_take_while(is_path)
+            let leaves = iter
+                .peeking_take_while(is_path)
                 .map(|s| LeafVdev::from(s.as_ref()))
                 .collect();
             v.push(f(leaves));

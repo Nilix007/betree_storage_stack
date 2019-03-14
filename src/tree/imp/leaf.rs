@@ -1,10 +1,10 @@
 use super::FillUpResult;
-use cow_bytes::{CowBytes, SlicedCowBytes};
-use size::Size;
+use crate::cow_bytes::{CowBytes, SlicedCowBytes};
+use crate::size::Size;
+use crate::tree::MessageAction;
 use std::borrow::Borrow;
 use std::collections::{BTreeMap, Bound};
 use std::iter::FromIterator;
-use tree::MessageAction;
 
 /// A leaf node of the tree holds pairs of keys values which are plain data.
 #[derive(Debug, Clone)]
@@ -63,7 +63,7 @@ impl LeafNode {
         self.entries.get(key).cloned()
     }
 
-    pub(in tree) fn entries(&self) -> &BTreeMap<CowBytes, SlicedCowBytes> {
+    pub(in crate::tree) fn entries(&self) -> &BTreeMap<CowBytes, SlicedCowBytes> {
         &self.entries
     }
 
@@ -200,11 +200,11 @@ impl LeafNode {
 #[cfg(test)]
 mod tests {
     use super::{BTreeMap, CowBytes, LeafNode, Size, SlicedCowBytes};
+    use crate::tree::imp::packed::PackedMap;
+    use crate::tree::message_action::DefaultMessageActionMsg;
+    use crate::tree::DefaultMessageAction;
     use quickcheck::{Arbitrary, Gen, TestResult};
     use rand::Rng;
-    use tree::imp::packed::PackedMap;
-    use tree::message_action::DefaultMessageActionMsg;
-    use tree::DefaultMessageAction;
 
     impl Arbitrary for LeafNode {
         fn arbitrary<G: Gen>(g: &mut G) -> Self {

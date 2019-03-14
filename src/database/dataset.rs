@@ -1,12 +1,12 @@
 use super::errors::*;
 use super::Database;
 use super::{ds_data_key, fetch_ds_data, DatasetData, DatasetId, DatasetTree, Generation};
-use cow_bytes::{CowBytes, SlicedCowBytes};
+use crate::cow_bytes::{CowBytes, SlicedCowBytes};
+use crate::tree::{DefaultMessageAction, Tree, TreeBaseLayer, TreeLayer};
 use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::ops::RangeBounds;
 use std::sync::Arc;
-use tree::{DefaultMessageAction, Tree, TreeBaseLayer, TreeLayer};
 
 /// The data set type.
 pub struct Dataset {
@@ -79,7 +79,8 @@ impl Database {
         let data = DatasetData {
             ptr,
             previous_snapshot: None,
-        }.pack()?;
+        }
+        .pack()?;
         self.root_tree
             .insert(key, DefaultMessageAction::insert_msg(&data))?;
         let mut key = vec![1];

@@ -1,7 +1,7 @@
 use super::leaf::LeafNode;
+use crate::cow_bytes::{CowBytes, SlicedCowBytes};
+use crate::size::Size;
 use byteorder::{ByteOrder, LittleEndian, WriteBytesExt};
-use cow_bytes::{CowBytes, SlicedCowBytes};
-use size::Size;
 use std::cmp;
 use std::io::{self, Write};
 use std::mem::{align_of, size_of};
@@ -72,8 +72,7 @@ impl PackedMap {
     fn values(&self) -> &[Data] {
         unsafe {
             let ptr = self.data.as_ptr();
-            let start = ptr
-                .add((size_of::<Header>() + size_of::<Data>() * self.entry_count as usize))
+            let start = ptr.add(size_of::<Header>() + size_of::<Data>() * self.entry_count as usize)
                 as *const Data;
             from_raw_parts(start, self.entry_count as usize)
         }

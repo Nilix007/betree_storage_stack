@@ -2,8 +2,8 @@ use super::{
     AtomicStatistics, Block, Error, ErrorKind, ScrubResult, Statistics, Vdev, VdevLeafRead,
     VdevLeafWrite, VdevRead, VdevWrite,
 };
-use checksum::Checksum;
-use checksum::{Builder, State, XxHash, XxHashBuilder};
+use crate::checksum::Checksum;
+use crate::checksum::{Builder, State, XxHash, XxHashBuilder};
 use futures::executor::block_on;
 use futures::future::{ready, MapOk, Ready};
 use futures::prelude::*;
@@ -256,8 +256,8 @@ impl VdevLeafWrite for FailingLeafVdev {
 macro_rules! try_ret {
     ($expr:expr) => {
         match $expr {
-            $crate::std::result::Result::Ok(val) => val,
-            $crate::std::result::Result::Err(err) => return err,
+            ::std::result::Result::Ok(val) => val,
+            ::std::result::Result::Err(err) => return err,
         }
     };
 }

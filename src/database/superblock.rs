@@ -1,11 +1,11 @@
 use super::errors::*;
+use crate::checksum::{Builder, State, XxHash, XxHashBuilder};
+use crate::size::StaticSize;
+use crate::storage_pool::StoragePoolLayer;
+use crate::vdev::{Block, BLOCK_SIZE};
 use bincode::{deserialize, serialize_into};
-use checksum::{Builder, State, XxHash, XxHashBuilder};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use size::StaticSize;
-use storage_pool::StoragePoolLayer;
-use vdev::{Block, BLOCK_SIZE};
 
 static MAGIC: &[u8] = b"HEAFSv3\0\n";
 

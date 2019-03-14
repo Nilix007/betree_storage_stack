@@ -1,5 +1,5 @@
 use super::MessageAction;
-use cow_bytes::{CowBytes, SlicedCowBytes};
+use crate::cow_bytes::{CowBytes, SlicedCowBytes};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::borrow::Borrow;

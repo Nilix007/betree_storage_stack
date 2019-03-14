@@ -1,8 +1,8 @@
 //! This module provides `CowBytes` which is a Copy-on-Write smart pointer
 //! similar to `std::borrow::Cow`.
 
+use crate::size::Size;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use size::Size;
 use stable_deref_trait::StableDeref;
 use std::borrow::Borrow;
 use std::cmp;

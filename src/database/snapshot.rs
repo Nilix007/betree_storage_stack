@@ -7,14 +7,14 @@ use super::{
 };
 use super::{DatasetData, DatasetId, DeadListData};
 use super::{DatasetTree, Generation, ObjectPointer};
-use allocator::Action;
+use crate::allocator::Action;
+use crate::cow_bytes::{CowBytes, SlicedCowBytes};
+use crate::data_management::Handler;
+use crate::tree::{DefaultMessageAction, Tree, TreeBaseLayer, TreeLayer};
 use byteorder::{BigEndian, ByteOrder};
-use cow_bytes::{CowBytes, SlicedCowBytes};
-use data_management::Handler;
 use std::borrow::Borrow;
 use std::ops::RangeBounds;
 use std::sync::Arc;
-use tree::{DefaultMessageAction, Tree, TreeBaseLayer, TreeLayer};
 
 /// The snapshot type.
 pub struct Snapshot {

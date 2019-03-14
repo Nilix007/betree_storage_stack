@@ -9,10 +9,10 @@ use std::ptr::{read, write};
 use std::slice::from_raw_parts;
 use std::sync::Arc;
 
-use cow_bytes::{CowBytes, SlicedCowBytes};
-use database::{Database, Dataset, Error, Snapshot};
+use crate::cow_bytes::{CowBytes, SlicedCowBytes};
+use crate::database::{Database, Dataset, Error, Snapshot};
+use crate::storage_pool::Configuration;
 use error_chain::ChainedError;
-use storage_pool::Configuration;
 
 /// The type for a storage pool configuration
 pub struct cfg_t(Configuration);

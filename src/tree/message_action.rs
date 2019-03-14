@@ -3,8 +3,8 @@
 //! These can have a custom payload and may perform arbitrary
 //! computation on message application.
 
+use crate::cow_bytes::{CowBytes, SlicedCowBytes};
 use bincode::{deserialize, serialize_into};
-use cow_bytes::{CowBytes, SlicedCowBytes};
 use std::fmt::Debug;
 use std::ops::Deref;
 
@@ -185,7 +185,7 @@ pub use self::tests::DefaultMessageActionMsg;
 #[cfg(test)]
 mod tests {
     use super::{DefaultMessageAction, Upsert};
-    use cow_bytes::SlicedCowBytes;
+    use crate::cow_bytes::SlicedCowBytes;
     use quickcheck::{Arbitrary, Gen};
     use rand::Rng;
 
