@@ -293,8 +293,10 @@ mod tests {
     impl Arbitrary for CowBytes {
         fn arbitrary<G: Gen>(g: &mut G) -> Self {
             let len = g.gen_range(0, 128);
+            let mut bytes = vec![0; len];
+            g.fill_bytes(&mut bytes);
             CowBytes {
-                inner: Arc::new(g.gen_iter().take(len).collect()),
+                inner: Arc::new(bytes),
             }
         }
 

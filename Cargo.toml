@@ -33,14 +33,14 @@ unbytify = "0.2"
 toml = "0.4"
 itertools = "0.8"
 ref_slice = "1.1"
-env_logger = "0.5"
+env_logger = "0.6"
 scoped_threadpool = "0.1"
-indicatif = "0.10"
+indicatif = "0.11"
 
 clippy = {version = "*", optional = true}
 
 [dev-dependencies]
-rand = "0.5"
+rand = "0.6"
 quickcheck = "0.7"
 quickcheck_macros = "0.7"
 clap = "2.32"
