@@ -12,9 +12,8 @@
 #![feature(futures_api)]
 #![feature(gen_future)]
 #![feature(arbitrary_self_types)]
-#![cfg_attr(any(test, feature = "clippy"), feature(plugin))]
+#![cfg_attr(feature = "clippy", feature(plugin))]
 #![cfg_attr(feature = "clippy", plugin(clippy))]
-#![cfg_attr(test, plugin(quickcheck_macros))]
 #![cfg_attr(test, feature(test))]
 
 extern crate bincode;
@@ -32,6 +31,9 @@ extern crate owning_ref;
 extern crate parking_lot;
 #[cfg(test)]
 extern crate quickcheck;
+#[cfg(test)]
+#[macro_use]
+extern crate quickcheck_macros;
 #[cfg(test)]
 extern crate rand;
 extern crate ref_slice;
