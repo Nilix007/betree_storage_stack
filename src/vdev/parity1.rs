@@ -8,7 +8,7 @@ use crate::buffer::{new_buffer, SplittableBuffer, SplittableMutBuffer};
 use crate::checksum::Checksum;
 use futures::future::{ready, FutureObj, IntoFuture};
 use futures::prelude::*;
-use futures::stream::{futures_ordered, futures_unordered};
+use futures::stream::{FuturesOrdered, FuturesUnordered};
 use std::iter::{once, repeat};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -130,12 +130,12 @@ impl<
 
     fn read_raw(&self, size: Block<u32>, offset: Block<u64>) -> Self::ReadRaw {
         let inner = Arc::clone(&self.inner);
-        let futures = self.inner.vdevs.iter().map(|disk| {
+        let futures: FuturesUnordered<_> = self.inner.vdevs.iter().map(|disk| {
             let data = alloc_uninitialized(size.to_bytes() as usize);
             disk.read_raw(data, offset).into_future()
-        });
+        }).collect();
         FutureObj::new(Box::new(
-            futures_unordered(futures)
+            futures
                 .collect::<Vec<_>>()
                 .then(move |result| {
                     let mut v = Vec::new();
@@ -177,7 +177,7 @@ where
 
     let (buf_handle, mut buf) = new_buffer(vec![0; size.to_bytes() as usize].into_boxed_slice());
 
-    let mut reads = Vec::with_capacity(disk_cnt - 1);
+    let mut reads = FuturesOrdered::new();
     {
         for ((disk, disk_offset), col_length) in disk_iter(
             &inner.vdevs,
@@ -198,7 +198,7 @@ where
     }
     let mut failed_idx = None;
     let mut faulted = Block(0);
-    for (idx, result) in await!(futures_ordered(reads).collect::<Vec<_>>())
+    for (idx, result) in await!(reads.collect::<Vec<_>>())
         .into_iter()
         .enumerate()
     {

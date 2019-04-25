@@ -1,7 +1,7 @@
 use futures::prelude::*;
 use futures::ready;
-use futures::stream::{futures_unordered, Collect, FuturesUnordered};
-use futures::task::{Poll, Waker};
+use futures::stream::{Collect, FuturesUnordered};
+use futures::task::{Context, Poll};
 use std::pin::Pin;
 
 pub struct UnfailableJoinAll<F: Future, G: Failed> {
@@ -10,9 +10,13 @@ pub struct UnfailableJoinAll<F: Future, G: Failed> {
 }
 
 impl<F: Future, G: Failed> UnfailableJoinAll<F, G> {
+    // XXX use IntoIter instead of Vec<_>
     pub(super) fn new(futures: Vec<F>, fail: G) -> Self {
         UnfailableJoinAll {
-            future: futures_unordered(futures).collect(),
+            future: futures
+                .into_iter()
+                .collect::<FuturesUnordered<_>>()
+                .collect(),
             fail: Some(fail),
         }
     }
@@ -22,10 +26,10 @@ impl<F: Future<Output = Result<(), E>>, G: Failed, E> TryFuture for UnfailableJo
     type Ok = ();
     type Error = E;
 
-    fn try_poll(self: Pin<&mut Self>, waker: &Waker) -> Poll<Result<Self::Ok, Self::Error>> {
+    fn try_poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Result<Self::Ok, Self::Error>> {
         let this = unsafe { Pin::get_unchecked_mut(self) };
         let f = unsafe { Pin::new_unchecked(&mut this.future) };
-        let results = ready!(f.poll(waker));
+        let results = ready!(f.poll(ctx));
         for result in results {
             if let Err(e) = result {
                 this.fail.take().unwrap().failed();
@@ -42,9 +46,13 @@ pub struct UnfailableJoinAllPlusOne<F: Future, G: Failed> {
 }
 
 impl<F: Future, G: Failed> UnfailableJoinAllPlusOne<F, G> {
+    // XXX use IntoIter instead of Vec<_>
     pub(super) fn new(futures: Vec<F>, fail: G) -> Self {
         UnfailableJoinAllPlusOne {
-            future: futures_unordered(futures).collect(),
+            future: futures
+                .into_iter()
+                .collect::<FuturesUnordered<_>>()
+                .collect(),
             fail: Some(fail),
         }
     }
@@ -54,10 +62,10 @@ impl<F: Future<Output = Result<(), E>>, G: Failed, E> TryFuture for UnfailableJo
     type Ok = ();
     type Error = E;
 
-    fn try_poll(self: Pin<&mut Self>, waker: &Waker) -> Poll<Result<Self::Ok, Self::Error>> {
+    fn try_poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Result<Self::Ok, Self::Error>> {
         let this = unsafe { Pin::get_unchecked_mut(self) };
         let f = unsafe { Pin::new_unchecked(&mut this.future) };
-        let results = ready!(f.poll(waker));
+        let results = ready!(f.poll(ctx));
         let mut error_occurred = false;
         for result in results {
             if let Err(e) = result {

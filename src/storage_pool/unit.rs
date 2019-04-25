@@ -5,7 +5,7 @@ use crate::vdev::{Block, Error as VdevError, VdevBoxed};
 use futures::executor::{block_on, ThreadPool};
 use futures::future::FutureObj;
 use futures::prelude::*;
-use futures::stream::futures_unordered;
+use futures::stream::FuturesUnordered;
 use futures::task::SpawnExt;
 use parking_lot::Mutex;
 use std::io;
@@ -70,13 +70,13 @@ impl<C: Checksum> StoragePoolLayer for StoragePoolUnit<C> {
     }
 
     fn write_raw(&self, data: Box<[u8]>, offset: Block<u64>) -> Result<(), VdevError> {
-        let vec = futures_unordered(
-            self.inner
-                .devices
-                .iter()
-                .map(|vdev| vdev.write_raw(data.clone(), offset)),
-        )
-        .try_collect();
+        let vec = self
+            .inner
+            .devices
+            .iter()
+            .map(|vdev| vdev.write_raw(data.clone(), offset))
+            .collect::<FuturesUnordered<_>>()
+            .try_collect();
         block_on(vec).map(|_: Vec<()>| ())
     }
 

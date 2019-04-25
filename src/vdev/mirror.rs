@@ -8,7 +8,7 @@ use crate::buffer::SplittableBuffer;
 use crate::checksum::Checksum;
 use futures::future::{ready, FutureObj, IntoFuture};
 use futures::prelude::*;
-use futures::stream::{futures_ordered, futures_unordered};
+use futures::stream::{FuturesOrdered, FuturesUnordered};
 use std::future::{from_generator, Future};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -67,7 +67,8 @@ where
         }
     };
     let faulted = failed_disks.len() as u32;
-    let repair: Vec<_> = failed_disks
+    let mut total_repaired = 0;
+    let mut s: FuturesUnordered<_> = failed_disks
         .into_iter()
         .map(|idx| {
             inner.vdevs[idx]
@@ -75,8 +76,6 @@ where
                 .into_future()
         })
         .collect();
-    let mut total_repaired = 0;
-    let mut s = futures_unordered(repair);
     while let Some(write_result) = await!(s.next()) {
         if write_result.is_err() {
             // TODO
@@ -135,12 +134,12 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
     fn scrub(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Scrub {
         let inner = Arc::clone(&self.inner);
         let f = move || {
-            let futures: Vec<_> = inner
+            let futures: FuturesOrdered<_> = inner
                 .vdevs
                 .iter()
                 .map(|disk| disk.read(size, offset, checksum.clone()).into_future())
                 .collect();
-            let futures: Vec<_> = await!(futures_ordered(futures).collect());
+            let futures: Vec<_> = await!(futures.collect());
             let mut data = None;
             let mut failed_disks = Vec::new();
             for (idx, result) in futures.into_iter().enumerate() {
@@ -160,12 +159,12 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
 
     fn read_raw(&self, size: Block<u32>, offset: Block<u64>) -> Self::ReadRaw {
         let inner = Arc::clone(&self.inner);
-        let futures = self.inner.vdevs.iter().map(|disk| {
+        let futures: FuturesUnordered<_> = self.inner.vdevs.iter().map(|disk| {
             let data = alloc_uninitialized(size.to_bytes() as usize);
             VdevLeafRead::<Box<[u8]>>::read_raw(disk, data, offset).into_future()
-        });
+        }).collect();
         FutureObj::new(Box::new(
-            futures_unordered(futures)
+            futures
                 .collect::<Vec<_>>()
                 .then(move |result| {
                     let mut v = Vec::new();
@@ -197,12 +196,12 @@ impl<V: VdevLeafWrite> VdevWrite for Mirror<V> {
                 .stats
                 .written
                 .fetch_add(size.as_u64(), Ordering::Relaxed);
-            let futures: Vec<_> = inner
+            let futures: FuturesUnordered<_> = inner
                 .vdevs
                 .iter()
                 .map(|disk| disk.write_raw(data.clone(), offset, false).into_future())
                 .collect();
-            let results: Vec<_> = await!(futures_unordered(futures).collect());
+            let results: Vec<_> = await!(futures.collect());
             let total_writes = results.len();
             let mut failed_writes = 0;
             for result in results {
