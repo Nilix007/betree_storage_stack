@@ -11,8 +11,6 @@
 #![feature(await_macro)]
 #![feature(gen_future)]
 #![feature(arbitrary_self_types)]
-#![cfg_attr(feature = "clippy", feature(plugin))]
-#![cfg_attr(feature = "clippy", plugin(clippy))]
 #![cfg_attr(test, feature(test))]
 
 extern crate bincode;
