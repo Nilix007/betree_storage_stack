@@ -9,7 +9,6 @@
 #![feature(never_type)]
 #![feature(async_await)]
 #![feature(await_macro)]
-#![feature(futures_api)]
 #![feature(gen_future)]
 #![feature(arbitrary_self_types)]
 #![cfg_attr(feature = "clippy", feature(plugin))]
