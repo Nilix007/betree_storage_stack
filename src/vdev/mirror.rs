@@ -9,7 +9,7 @@ use crate::checksum::Checksum;
 use futures::future::{ready, FutureObj, IntoFuture};
 use futures::prelude::*;
 use futures::stream::{FuturesOrdered, FuturesUnordered};
-use std::future::{from_generator, Future};
+use std::future::Future;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -104,7 +104,7 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
 
     fn read(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Read {
         let inner = Arc::clone(&self.inner);
-        let f = move || {
+        let f = async move {
             // Switch disk every 32 MiB. (which is 2^25 bytes)
             // TODO 32 MiB too large?
             let start_idx = (offset.to_bytes() >> 25) as usize % inner.vdevs.len();
@@ -128,12 +128,12 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
                 inner,
             })
         };
-        FutureObj::new(Box::new(handle_repair(size, offset, from_generator(f))))
+        FutureObj::new(Box::new(handle_repair(size, offset, f)))
     }
 
     fn scrub(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Scrub {
         let inner = Arc::clone(&self.inner);
-        let f = move || {
+        let f = async move {
             let futures: FuturesOrdered<_> = inner
                 .vdevs
                 .iter()
@@ -154,7 +154,7 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
                 inner,
             })
         };
-        FutureObj::new(Box::new(handle_repair(size, offset, from_generator(f))))
+        FutureObj::new(Box::new(handle_repair(size, offset, f)))
     }
 
     fn read_raw(&self, size: Block<u32>, offset: Block<u64>) -> Self::ReadRaw {
@@ -189,7 +189,7 @@ impl<V: VdevLeafWrite> VdevWrite for Mirror<V> {
 
     fn write(&self, data: Box<[u8]>, offset: Block<u64>) -> Self::Write {
         let inner = Arc::clone(&self.inner);
-        let f = move || {
+        let f = async move {
             let size = Block::from_bytes(data.len() as u32);
             let data = SplittableBuffer::new(data);
             inner
@@ -217,7 +217,7 @@ impl<V: VdevLeafWrite> VdevWrite for Mirror<V> {
                 bail!(ErrorKind::WriteError(inner.id.clone()))
             }
         };
-        FutureObj::new(Box::new(from_generator(f)))
+        FutureObj::new(Box::new(f))
     }
 
     fn flush(&self) -> Result<(), Error> {
