@@ -1,6 +1,6 @@
 # Be-Tree Storage Stack
 
-This code was written as a part of a [master's thesis](https://wr.informatik.uni-hamburg.de/_media/research:theses:felix_wiedemann_modern_storage_stack_with_key_value_store_interface_and_snapshots_based_on_copy_on_write_b___trees.pdf).
+This code was written as a part of a [master's thesis](https://wr.informatik.uni-hamburg.de/_media/research:theses:felix_wiedemann_modern_storage_stack_with_key_value_store_interface_and_snapshots_based_on_copy_on_write_b%CE%B5_trees.pdf).
 
 ## License
 
