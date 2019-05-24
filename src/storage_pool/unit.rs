@@ -3,12 +3,12 @@ use crate::bounded_future_queue::BoundedFutureQueue;
 use crate::checksum::Checksum;
 use crate::vdev::{Block, Error as VdevError, VdevBoxed};
 use futures::executor::{block_on, ThreadPool};
-use futures::future::FutureObj;
 use futures::prelude::*;
 use futures::stream::FuturesUnordered;
 use futures::task::SpawnExt;
 use parking_lot::Mutex;
 use std::io;
+use std::pin::Pin;
 use std::sync::Arc;
 
 /// Actual implementation of the `StoragePoolLayer`.
@@ -17,8 +17,10 @@ pub struct StoragePoolUnit<C: Checksum> {
     inner: Arc<Inner<C>>,
 }
 
-pub(super) type WriteBackQueue =
-    BoundedFutureQueue<DiskOffset, FutureObj<'static, Result<(), VdevError>>>;
+pub(super) type WriteBackQueue = BoundedFutureQueue<
+    DiskOffset,
+    Pin<Box<dyn Future<Output = Result<(), VdevError>> + Send + 'static>>,
+>;
 
 struct Inner<C> {
     devices: Vec<Box<VdevBoxed<C>>>,
@@ -41,7 +43,7 @@ impl<C: Checksum> StoragePoolLayer for StoragePoolUnit<C> {
         })
     }
 
-    type ReadAsync = FutureObj<'static, Result<Box<[u8]>, VdevError>>;
+    type ReadAsync = Pin<Box<dyn Future<Output = Result<Box<[u8]>, VdevError>> + Send + 'static>>;
 
     fn read_async(
         &self,
@@ -50,13 +52,9 @@ impl<C: Checksum> StoragePoolLayer for StoragePoolUnit<C> {
         checksum: C,
     ) -> Result<Self::ReadAsync, VdevError> {
         self.inner.write_back_queue.lock().wait(&offset)?;
-        Ok(FutureObj::new(Box::new(
-            (&self.inner.pool).spawn_with_handle(self.inner.devices[offset.disk_id()].read(
-                size,
-                offset.block_offset(),
-                checksum,
-            ))?,
-        )))
+        Ok(Box::pin((&self.inner.pool).spawn_with_handle(
+            self.inner.devices[offset.disk_id()].read(size, offset.block_offset(), checksum),
+        )?))
     }
 
     fn begin_write(&self, data: Box<[u8]>, offset: DiskOffset) -> Result<(), VdevError> {
@@ -66,7 +64,7 @@ impl<C: Checksum> StoragePoolLayer for StoragePoolUnit<C> {
         self.inner
             .write_back_queue
             .lock()
-            .enqueue(offset, FutureObj::new(Box::new(write)))
+            .enqueue(offset, Box::pin(write))
     }
 
     fn write_raw(&self, data: Box<[u8]>, offset: Block<u64>) -> Result<(), VdevError> {

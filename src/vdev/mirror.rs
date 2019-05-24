@@ -6,12 +6,13 @@ use super::{
 };
 use crate::buffer::SplittableBuffer;
 use crate::checksum::Checksum;
-use futures::future::{ready, FutureObj, IntoFuture};
+use futures::future::{ready, IntoFuture};
 use futures::prelude::*;
 use futures::stream::{FuturesOrdered, FuturesUnordered};
 use std::future::Future;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::pin::Pin;
 
 /// This `vdev` will mirror all data to its child vdevs.
 pub struct Mirror<V> {
@@ -98,9 +99,9 @@ where
 impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrite> VdevRead<C>
     for Mirror<V>
 {
-    type Read = FutureObj<'static, Result<Box<[u8]>, Error>>;
-    type Scrub = FutureObj<'static, Result<ScrubResult, Error>>;
-    type ReadRaw = FutureObj<'static, Result<Vec<Box<[u8]>>, Error>>;
+    type Read = Pin<Box<dyn Future<Output = Result<Box<[u8]>, Error>> + Send + 'static>>;
+    type Scrub = Pin<Box<dyn Future<Output = Result<ScrubResult, Error>> + Send + 'static>>;
+    type ReadRaw = Pin<Box<dyn Future<Output = Result<Vec<Box<[u8]>>, Error>> + Send + 'static>>;
 
     fn read(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Read {
         let inner = Arc::clone(&self.inner);
@@ -128,7 +129,7 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
                 inner,
             })
         };
-        FutureObj::new(Box::new(handle_repair(size, offset, f)))
+        Box::pin(handle_repair(size, offset, f))
     }
 
     fn scrub(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Scrub {
@@ -154,7 +155,7 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
                 inner,
             })
         };
-        FutureObj::new(Box::new(handle_repair(size, offset, f)))
+        Box::pin(handle_repair(size, offset, f))
     }
 
     fn read_raw(&self, size: Block<u32>, offset: Block<u64>) -> Self::ReadRaw {
@@ -163,7 +164,7 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
             let data = alloc_uninitialized(size.to_bytes() as usize);
             VdevLeafRead::<Box<[u8]>>::read_raw(disk, data, offset).into_future()
         }).collect();
-        FutureObj::new(Box::new(
+        Box::pin(
             futures
                 .collect::<Vec<_>>()
                 .then(move |result| {
@@ -179,12 +180,12 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
                         ready(Ok(v))
                     }
                 }),
-        ))
+        )
     }
 }
 
 impl<V: VdevLeafWrite> VdevWrite for Mirror<V> {
-    type Write = FutureObj<'static, Result<(), Error>>;
+    type Write = Pin<Box<Future<Output = Result<(), Error>> + Send + 'static>>;
     type WriteRaw = UnfailableJoinAll<IntoFuture<V::WriteRaw>, FailedWriteUpdateStats<V>>;
 
     fn write(&self, data: Box<[u8]>, offset: Block<u64>) -> Self::Write {
@@ -217,7 +218,7 @@ impl<V: VdevLeafWrite> VdevWrite for Mirror<V> {
                 bail!(ErrorKind::WriteError(inner.id.clone()))
             }
         };
-        FutureObj::new(Box::new(f))
+        Box::pin(f)
     }
 
     fn flush(&self) -> Result<(), Error> {

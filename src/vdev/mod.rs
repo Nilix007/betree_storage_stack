@@ -3,8 +3,9 @@
 //! that are built on top of storage devices.
 
 use crate::checksum::Checksum;
-use futures::future::{FutureObj, TryFutureExt};
-use futures::TryFuture;
+use futures::future::TryFutureExt;
+use futures::{Future, TryFuture};
+use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Internal block size (4KiB)
@@ -205,13 +206,17 @@ pub trait VdevBoxed<C: Checksum>: Send + Sync {
         size: Block<u32>,
         offset: Block<u64>,
         checksum: C,
-    ) -> FutureObj<'static, Result<Box<[u8]>, Error>>;
+    ) -> Pin<Box<dyn Future<Output = Result<Box<[u8]>, Error>> + Send + 'static>>;
     /// Writes the `data` at `offset`. Returns success if the data has been
     /// written to
     /// enough replicas so that the data can be retrieved later on.
     ///
     /// Note: `data.len()` must be a multiple of `BLOCK_SIZE`.
-    fn write(&self, data: Box<[u8]>, offset: Block<u64>) -> FutureObj<'static, Result<(), Error>>;
+    fn write(
+        &self,
+        data: Box<[u8]>,
+        offset: Block<u64>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
     /// Returns the actual size of a data block which may be larger due to
     /// parity data.
     fn actual_size(&self, size: Block<u32>) -> Block<u32>;
@@ -230,7 +235,7 @@ pub trait VdevBoxed<C: Checksum>: Send + Sync {
         &self,
         data: Box<[u8]>,
         offset: Block<u64>,
-    ) -> FutureObj<'static, Result<(), Error>>;
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
     /// Reads `size` blocks at `offset` and verifies the data with the
     /// `checksum`.
     /// In contrast to `read`, this function will read and verify data from
@@ -241,14 +246,14 @@ pub trait VdevBoxed<C: Checksum>: Send + Sync {
         size: Block<u32>,
         offset: Block<u64>,
         checksum: C,
-    ) -> FutureObj<'static, Result<ScrubResult, Error>>;
+    ) -> Pin<Box<dyn Future<Output = Result<ScrubResult, Error>> + Send + 'static>>;
     /// Reads `size` blocks at `offset` of every child vdev. Does not verify
     /// the data.
     fn read_raw(
         &self,
         size: Block<u32>,
         offset: Block<u64>,
-    ) -> FutureObj<'static, Result<Vec<Box<[u8]>>, Error>>;
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<Box<[u8]>>, Error>> + Send + 'static>>;
 }
 
 impl<C: Checksum, V: Vdev + VdevWrite + VdevRead<C>> VdevBoxed<C> for V {
@@ -257,18 +262,16 @@ impl<C: Checksum, V: Vdev + VdevWrite + VdevRead<C>> VdevBoxed<C> for V {
         size: Block<u32>,
         offset: Block<u64>,
         checksum: C,
-    ) -> FutureObj<'static, Result<Box<[u8]>, Error>> {
-        FutureObj::new(Box::new(
-            VdevRead::<C>::read(self, size, offset, checksum).into_future(),
-        ))
+    ) -> Pin<Box<dyn Future<Output = Result<Box<[u8]>, Error>> + Send + 'static>> {
+        Box::pin(VdevRead::<C>::read(self, size, offset, checksum).into_future())
     }
 
     default fn write(
         &self,
         data: Box<[u8]>,
         offset: Block<u64>,
-    ) -> FutureObj<'static, Result<(), Error>> {
-        FutureObj::new(Box::new(VdevWrite::write(self, data, offset).into_future()))
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>> {
+        Box::pin(VdevWrite::write(self, data, offset).into_future())
     }
 
     fn actual_size(&self, size: Block<u32>) -> Block<u32> {
@@ -294,29 +297,23 @@ impl<C: Checksum, V: Vdev + VdevWrite + VdevRead<C>> VdevBoxed<C> for V {
         &self,
         data: Box<[u8]>,
         offset: Block<u64>,
-    ) -> FutureObj<'static, Result<(), Error>> {
-        FutureObj::new(Box::new(
-            VdevWrite::write_raw(self, data, offset).into_future(),
-        ))
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>> {
+        Box::pin(VdevWrite::write_raw(self, data, offset).into_future())
     }
     default fn scrub(
         &self,
         size: Block<u32>,
         offset: Block<u64>,
         checksum: C,
-    ) -> FutureObj<'static, Result<ScrubResult, Error>> {
-        FutureObj::new(Box::new(
-            VdevRead::<C>::scrub(self, size, offset, checksum).into_future(),
-        ))
+    ) -> Pin<Box<dyn Future<Output = Result<ScrubResult, Error>> + Send + 'static>> {
+        Box::pin(VdevRead::<C>::scrub(self, size, offset, checksum).into_future())
     }
     default fn read_raw(
         &self,
         size: Block<u32>,
         offset: Block<u64>,
-    ) -> FutureObj<'static, Result<Vec<Box<[u8]>>, Error>> {
-        FutureObj::new(Box::new(
-            VdevRead::<C>::read_raw(self, size, offset).into_future(),
-        ))
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<Box<[u8]>>, Error>> + Send + 'static>> {
+        Box::pin(VdevRead::<C>::read_raw(self, size, offset).into_future())
     }
 }
 

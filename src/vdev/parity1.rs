@@ -6,12 +6,13 @@ use super::{
 };
 use crate::buffer::{new_buffer, SplittableBuffer, SplittableMutBuffer};
 use crate::checksum::Checksum;
-use futures::future::{ready, FutureObj, IntoFuture};
+use futures::future::{ready, IntoFuture};
 use futures::prelude::*;
 use futures::stream::{FuturesOrdered, FuturesUnordered};
 use std::iter::{once, repeat};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::pin::Pin;
 
 /// This `vdev` will generate parity data and stripe all data to its child
 /// vdevs.
@@ -104,28 +105,28 @@ impl<
         C: Checksum,
     > VdevRead<C> for Parity1<V>
 {
-    type Read = FutureObj<'static, Result<Box<[u8]>, Error>>;
-    type Scrub = FutureObj<'static, Result<ScrubResult, Error>>;
-    type ReadRaw = FutureObj<'static, Result<Vec<Box<[u8]>>, Error>>;
+    type Read = Pin<Box<dyn Future<Output = Result<Box<[u8]>, Error>> + Send + 'static>>;
+    type Scrub = Pin<Box<dyn Future<Output = Result<ScrubResult, Error>> + Send + 'static>>;
+    type ReadRaw = Pin<Box<dyn Future<Output = Result<Vec<Box<[u8]>>, Error>> + Send + 'static>>;
 
     fn read(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Read {
-        FutureObj::new(Box::new(read(
+        Box::pin(read(
             Arc::clone(&self.inner),
             size,
             offset,
             checksum,
             false,
-        )))
+        ))
     }
 
     fn scrub(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Scrub {
-        FutureObj::new(Box::new(read(
+        Box::pin(read(
             Arc::clone(&self.inner),
             size,
             offset,
             checksum,
             true,
-        )))
+        ))
     }
 
     fn read_raw(&self, size: Block<u32>, offset: Block<u64>) -> Self::ReadRaw {
@@ -134,7 +135,7 @@ impl<
             let data = alloc_uninitialized(size.to_bytes() as usize);
             disk.read_raw(data, offset).into_future()
         }).collect();
-        FutureObj::new(Box::new(
+        Box::pin(
             futures
                 .collect::<Vec<_>>()
                 .then(move |result| {
@@ -150,7 +151,7 @@ impl<
                         ready(Ok(v))
                     }
                 }),
-        ))
+        )
     }
 }
 

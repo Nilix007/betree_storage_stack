@@ -8,7 +8,7 @@ use crate::size::{SizeMut, StaticSize};
 use crate::storage_pool::{DiskOffset, StoragePoolLayer};
 use crate::vdev::{Block, BLOCK_SIZE};
 use futures::executor::block_on;
-use futures::future::{ok, FutureObj};
+use futures::future::ok;
 use futures::prelude::*;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use serde::de::DeserializeOwned;
@@ -18,6 +18,7 @@ use stable_deref_trait::StableDeref;
 use std::collections::HashMap;
 use std::mem::{replace, transmute, ManuallyDrop};
 use std::ops::{Deref, DerefMut};
+use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread::yield_now;
 
@@ -809,17 +810,20 @@ where
         self.handle_write_back(object, mid, false)
     }
 
-    type Prefetch =
-        FutureObj<'static, Result<(<Self as DmlBase>::ObjectPointer, Box<[u8]>), Error>>;
+    type Prefetch = Pin<
+        Box<
+            dyn Future<Output = Result<(<Self as DmlBase>::ObjectPointer, Box<[u8]>), Error>>
+                + Send
+                + 'static,
+        >,
+    >;
     fn prefetch(&self, or: &Self::ObjectRef) -> Result<Option<Self::Prefetch>, Error> {
         if self.cache.read().contains_key(&or.as_key()) {
             return Ok(None);
         }
         Ok(match *or {
             ObjectRef::Modified(_) | ObjectRef::InWriteback(_) => None,
-            ObjectRef::Unmodified(ref p) => Some(FutureObj::new(Box::new(
-                self.try_fetch_async(p)?.into_future(),
-            ))),
+            ObjectRef::Unmodified(ref p) => Some(Box::pin(self.try_fetch_async(p)?.into_future())),
         })
     }
 

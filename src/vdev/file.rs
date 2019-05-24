@@ -4,7 +4,7 @@ use super::{
     AtomicStatistics, Block, ScrubResult, Statistics, Vdev, VdevLeafRead, VdevLeafWrite, VdevRead,
 };
 use crate::checksum::Checksum;
-use futures::future::{lazy, ready, FutureObj, Ready};
+use futures::future::{lazy, ready, Ready};
 use futures::prelude::*;
 use libc::{c_ulong, ioctl};
 use std::fs;
@@ -12,6 +12,7 @@ use std::io;
 use std::os::unix::fs::FileExt;
 use std::os::unix::fs::FileTypeExt;
 use std::os::unix::io::AsRawFd;
+use std::pin::Pin;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -65,9 +66,9 @@ fn get_block_device_size(file: &fs::File) -> Result<Block<u64>, io::Error> {
 }
 
 impl<C: Checksum> VdevRead<C> for File {
-    type Read = FutureObj<'static, Result<Box<[u8]>, Error>>;
-    type Scrub = FutureObj<'static, Result<ScrubResult, Error>>;
-    type ReadRaw = FutureObj<'static, Result<Vec<Box<[u8]>>, Error>>;
+    type Read = Pin<Box<dyn Future<Output = Result<Box<[u8]>, Error>> + Send + 'static>>;
+    type Scrub = Pin<Box<dyn Future<Output = Result<ScrubResult, Error>> + Send + 'static>>;
+    type ReadRaw = Pin<Box<dyn Future<Output = Result<Vec<Box<[u8]>>, Error>> + Send + 'static>>;
 
     fn read(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Read {
         self.inner
@@ -75,7 +76,7 @@ impl<C: Checksum> VdevRead<C> for File {
             .read
             .fetch_add(size.as_u64(), Ordering::Relaxed);
         let inner = Arc::clone(&self.inner);
-        FutureObj::new(Box::new(lazy(move |_| {
+        Box::pin(lazy(move |_| {
             let size_in_bytes = size.to_bytes() as usize;
             let mut buf = alloc_uninitialized(size_in_bytes);
             match inner.file.read_exact_at(&mut buf, offset.to_bytes()) {
@@ -102,7 +103,7 @@ impl<C: Checksum> VdevRead<C> for File {
                     Err(e)
                 }
             }
-        })))
+        }))
     }
 
     fn scrub(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Scrub {
@@ -113,9 +114,7 @@ impl<C: Checksum> VdevRead<C> for File {
                 faulted: Block(0),
             }))
         }
-        FutureObj::new(Box::new(
-            self.read(size, offset, checksum).and_then(to_scrub_result),
-        ))
+        Box::pin(self.read(size, offset, checksum).and_then(to_scrub_result))
     }
     fn read_raw(&self, size: Block<u32>, offset: Block<u64>) -> Self::ReadRaw {
         self.inner
@@ -123,7 +122,7 @@ impl<C: Checksum> VdevRead<C> for File {
             .read
             .fetch_add(size.as_u64(), Ordering::Relaxed);
         let inner = Arc::clone(&self.inner);
-        FutureObj::new(Box::new(lazy(move |_| {
+        Box::pin(lazy(move |_| {
             let size_in_bytes = size.to_bytes() as usize;
             let mut buf = alloc_uninitialized(size_in_bytes);
             match inner.file.read_exact_at(&mut buf, offset.to_bytes()) {
@@ -137,7 +136,7 @@ impl<C: Checksum> VdevRead<C> for File {
                 }
             };
             Ok(vec![buf])
-        })))
+        }))
     }
 }
 
@@ -170,7 +169,7 @@ impl Vdev for File {
 }
 
 impl<T: AsMut<[u8]> + Send + 'static> VdevLeafRead<T> for File {
-    type ReadRaw = FutureObj<'static, Result<T, Error>>;
+    type ReadRaw = Pin<Box<dyn Future<Output = Result<T, Error>> + Send + 'static>>;
 
     fn read_raw(&self, mut buf: T, offset: Block<u64>) -> Self::ReadRaw {
         let size = Block::from_bytes(buf.as_mut().len() as u32);
@@ -179,7 +178,7 @@ impl<T: AsMut<[u8]> + Send + 'static> VdevLeafRead<T> for File {
             .read
             .fetch_add(size.as_u64(), Ordering::Relaxed);
         let inner = Arc::clone(&self.inner);
-        FutureObj::new(Box::new(lazy(move |_| {
+        Box::pin(lazy(move |_| {
             match inner.file.read_exact_at(buf.as_mut(), offset.to_bytes()) {
                 Ok(()) => Ok(buf),
                 Err(e) => {
@@ -190,7 +189,7 @@ impl<T: AsMut<[u8]> + Send + 'static> VdevLeafRead<T> for File {
                     bail!(e)
                 }
             }
-        })))
+        }))
     }
 
     fn checksum_error_occurred(&self, size: Block<u32>) {
@@ -202,7 +201,7 @@ impl<T: AsMut<[u8]> + Send + 'static> VdevLeafRead<T> for File {
 }
 
 impl VdevLeafWrite for File {
-    type WriteRaw = FutureObj<'static, Result<(), Error>>;
+    type WriteRaw = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
 
     fn write_raw<T: AsRef<[u8]> + Send + 'static>(
         &self,
@@ -216,7 +215,7 @@ impl VdevLeafWrite for File {
             .written
             .fetch_add(block_cnt, Ordering::Relaxed);
         let inner = Arc::clone(&self.inner);
-        FutureObj::new(Box::new(lazy(move |_| {
+        Box::pin(lazy(move |_| {
             match inner
                 .file
                 .write_all_at(data.as_ref(), offset.to_bytes())
@@ -237,7 +236,7 @@ impl VdevLeafWrite for File {
                     Err(e)
                 }
             }
-        })))
+        }))
     }
     fn flush(&self) -> Result<(), Error> {
         Ok(self.inner.file.sync_data()?)
