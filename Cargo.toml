@@ -28,7 +28,7 @@ byteorder = "1.0"
 lz4 = "1.21"
 seqlock = { path = "seqlock/" }
 twox-hash = "1.1"
-stable_deref_trait = "1.0"
+stable_deref_trait = "1.1"
 unbytify = "0.2"
 toml = "0.5"
 itertools = "0.8"
