@@ -165,7 +165,7 @@ impl Vdev for File {
         self.inner.stats.as_stats()
     }
 
-    fn for_each_child(&self, _f: &mut FnMut(&Vdev)) {}
+    fn for_each_child(&self, _f: &mut dyn FnMut(&dyn Vdev)) {}
 }
 
 impl<T: AsMut<[u8]> + Send + 'static> VdevLeafRead<T> for File {

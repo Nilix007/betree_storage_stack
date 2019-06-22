@@ -46,7 +46,7 @@ impl Configuration {
         Configuration { top_level_vdevs }
     }
     /// Opens file and devices and constructs a `Vec<Vdev>`.
-    pub fn build<C: Checksum>(&self) -> io::Result<Vec<Box<VdevBoxed<C>>>> {
+    pub fn build<C: Checksum>(&self) -> io::Result<Vec<Box<dyn VdevBoxed<C>>>> {
         self.top_level_vdevs
             .iter()
             .enumerate()
@@ -130,7 +130,7 @@ impl FromIterator<Vdev> for Configuration {
 
 impl Vdev {
     /// Opens file and devices and constructs a `Vdev`.
-    fn build<C: Checksum>(&self, n: usize) -> io::Result<Box<VdevBoxed<C>>> {
+    fn build<C: Checksum>(&self, n: usize) -> io::Result<Box<dyn VdevBoxed<C>>> {
         match *self {
             Vdev::Mirror(ref vec) => {
                 let leaves: io::Result<Vec<_>> = vec.iter().map(LeafVdev::build).collect();

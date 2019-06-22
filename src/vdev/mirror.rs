@@ -185,7 +185,7 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
 }
 
 impl<V: VdevLeafWrite> VdevWrite for Mirror<V> {
-    type Write = Pin<Box<Future<Output = Result<(), Error>> + Send + 'static>>;
+    type Write = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
     type WriteRaw = UnfailableJoinAll<IntoFuture<V::WriteRaw>, FailedWriteUpdateStats<V>>;
 
     fn write(&self, data: Box<[u8]>, offset: Block<u64>) -> Self::Write {
@@ -286,7 +286,7 @@ impl<V: Vdev> Vdev for Mirror<V> {
         self.inner.stats.as_stats()
     }
 
-    fn for_each_child(&self, f: &mut FnMut(&Vdev)) {
+    fn for_each_child(&self, f: &mut dyn FnMut(&dyn Vdev)) {
         for vdev in self.inner.vdevs.iter() {
             f(vdev);
         }

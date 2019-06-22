@@ -264,7 +264,7 @@ impl<N> Node<N> {
         left_pivot_key: &mut Option<CowBytes>,
         right_pivot_key: &mut Option<CowBytes>,
         all_msgs: &mut BTreeMap<CowBytes, Vec<SlicedCowBytes>>,
-    ) -> GetRangeResult<Box<Iterator<Item = (&'a [u8], SlicedCowBytes)> + 'a>, N> {
+    ) -> GetRangeResult<Box<dyn Iterator<Item = (&'a [u8], SlicedCowBytes)> + 'a>, N> {
         match self.0 {
             PackedLeaf(ref map) => GetRangeResult::Data(map.get_all()),
             Leaf(ref leaf) => GetRangeResult::Data(Box::new(

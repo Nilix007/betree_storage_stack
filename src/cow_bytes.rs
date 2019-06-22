@@ -300,7 +300,7 @@ mod tests {
             }
         }
 
-        fn shrink(&self) -> Box<Iterator<Item = Self>> {
+        fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
             Box::new(self.inner.shrink().map(|inner| CowBytes { inner }))
         }
     }

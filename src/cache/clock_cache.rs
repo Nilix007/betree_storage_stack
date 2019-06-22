@@ -222,7 +222,7 @@ impl<K: Clone + Eq + Hash + Sync + Send, V: Sync + Send + 'static> Cache for Clo
 
     fn change_key<E, F>(&mut self, key: &K, f: F) -> Result<(), ChangeKeyError<E>>
     where
-        F: FnOnce(&K, &mut V, &Fn(&K) -> bool) -> Result<K, E>,
+        F: FnOnce(&K, &mut V, &dyn Fn(&K) -> bool) -> Result<K, E>,
     {
         let new_key = {
             let second_ref: &Self = unsafe { &*(self as *mut _) };
@@ -252,7 +252,7 @@ impl<K: Clone + Eq + Hash + Sync + Send, V: Sync + Send + 'static> Cache for Clo
 
     fn evict<F>(&mut self, mut f: F) -> Option<(K, V)>
     where
-        F: FnMut(&K, &mut V, &Fn(&K) -> bool) -> Option<usize>,
+        F: FnMut(&K, &mut V, &dyn Fn(&K) -> bool) -> Option<usize>,
     {
         let len = self.clock.len();
         let mut cnt = 0;
@@ -332,7 +332,7 @@ impl<K: Clone + Eq + Hash + Sync + Send, V: Sync + Send + 'static> Cache for Clo
         }
     }
 
-    fn iter<'a>(&'a self) -> Box<Iterator<Item = &'a K> + 'a> {
+    fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a K> + 'a> {
         Box::new(self.clock.iter())
     }
 

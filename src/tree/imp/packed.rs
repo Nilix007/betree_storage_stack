@@ -98,7 +98,7 @@ impl PackedMap {
         Some(self.get_slice_cow(self.values()[idx]))
     }
 
-    pub fn get_all<'a>(&'a self) -> Box<Iterator<Item = (&'a [u8], SlicedCowBytes)> + 'a> {
+    pub fn get_all<'a>(&'a self) -> Box<dyn Iterator<Item = (&'a [u8], SlicedCowBytes)> + 'a> {
         Box::new(
             self.keys()
                 .iter()

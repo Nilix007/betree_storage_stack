@@ -93,7 +93,7 @@ impl<V: Vdev + VdevLeafRead<SplittableMutBuffer> + VdevLeafWrite> Vdev for Parit
         self.inner.stats.as_stats()
     }
 
-    fn for_each_child(&self, f: &mut FnMut(&Vdev)) {
+    fn for_each_child(&self, f: &mut dyn FnMut(&dyn Vdev)) {
         for vdev in self.inner.vdevs.iter() {
             f(vdev);
         }

@@ -25,9 +25,9 @@ pub struct ds_t(Dataset);
 /// The snapshot type
 pub struct ss_t(Snapshot);
 /// The data set/snapshot name iterator type
-pub struct name_iter_t(Box<Iterator<Item = Result<SlicedCowBytes, Error>>>);
+pub struct name_iter_t(Box<dyn Iterator<Item = Result<SlicedCowBytes, Error>>>);
 /// The range iterator type
-pub struct range_iter_t(Box<Iterator<Item = Result<(CowBytes, SlicedCowBytes), Error>>>);
+pub struct range_iter_t(Box<dyn Iterator<Item = Result<(CowBytes, SlicedCowBytes), Error>>>);
 
 /// A reference counted byte slice
 #[repr(C)]
@@ -121,7 +121,7 @@ impl HandleResult for Snapshot {
     }
 }
 
-impl HandleResult for Box<Iterator<Item = Result<SlicedCowBytes, Error>>> {
+impl HandleResult for Box<dyn Iterator<Item = Result<SlicedCowBytes, Error>>> {
     type Result = *mut name_iter_t;
     fn success(self) -> *mut name_iter_t {
         b(name_iter_t(self))
@@ -131,7 +131,7 @@ impl HandleResult for Box<Iterator<Item = Result<SlicedCowBytes, Error>>> {
     }
 }
 
-impl HandleResult for Box<Iterator<Item = Result<(CowBytes, SlicedCowBytes), Error>>> {
+impl HandleResult for Box<dyn Iterator<Item = Result<(CowBytes, SlicedCowBytes), Error>>> {
     type Result = *mut range_iter_t;
     fn success(self) -> *mut range_iter_t {
         b(range_iter_t(self))
@@ -320,7 +320,7 @@ pub unsafe extern "C" fn betree_iter_datasets(
 ) -> *mut name_iter_t {
     let db = &mut (*db).0;
     db.iter_datasets()
-        .map(|it| Box::new(it) as Box<Iterator<Item = Result<SlicedCowBytes, Error>>>)
+        .map(|it| Box::new(it) as Box<dyn Iterator<Item = Result<SlicedCowBytes, Error>>>)
         .handle_result(err)
 }
 
@@ -436,7 +436,7 @@ pub unsafe extern "C" fn betree_iter_snapshots(
     let db = &(*db).0;
     let ds = &(*ds).0;
     db.iter_snapshots(ds)
-        .map(|it| Box::new(it) as Box<Iterator<Item = Result<SlicedCowBytes, Error>>>)
+        .map(|it| Box::new(it) as Box<dyn Iterator<Item = Result<SlicedCowBytes, Error>>>)
         .handle_result(err)
 }
 

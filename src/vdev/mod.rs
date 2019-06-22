@@ -140,7 +140,7 @@ pub trait Vdev: Send + Sync + 'static {
     fn effective_free_size(&self, free_size: Block<u64>) -> Block<u64>;
 
     /// Turns self into a trait object.
-    fn boxed<C: Checksum>(self) -> Box<VdevBoxed<C>>
+    fn boxed<C: Checksum>(self) -> Box<dyn VdevBoxed<C>>
     where
         Self: VdevRead<C> + VdevWrite + Sized,
     {
@@ -154,7 +154,7 @@ pub trait Vdev: Send + Sync + 'static {
     fn stats(&self) -> Statistics;
 
     /// Executes `f` for each child vdev.
-    fn for_each_child(&self, f: &mut FnMut(&Vdev));
+    fn for_each_child(&self, f: &mut dyn FnMut(&dyn Vdev));
 }
 
 /// Trait for reading from a leaf vdev.

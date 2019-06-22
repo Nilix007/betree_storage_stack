@@ -143,7 +143,7 @@ impl Vdev for FailingLeafVdev {
         self.inner.stats.as_stats()
     }
 
-    fn for_each_child(&self, _f: &mut FnMut(&Vdev)) {}
+    fn for_each_child(&self, _f: &mut dyn FnMut(&dyn Vdev)) {}
 
     fn num_disks(&self) -> usize {
         1
@@ -284,7 +284,7 @@ impl Arbitrary for NonZeroU8 {
         NonZeroU8(g.gen_range(1, 255))
     }
 
-    fn shrink(&self) -> Box<Iterator<Item = Self>> {
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
         Box::new(self.0.shrink().filter(|&x| x != 0).map(NonZeroU8))
     }
 }

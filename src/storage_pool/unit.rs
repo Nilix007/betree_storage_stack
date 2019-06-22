@@ -23,7 +23,7 @@ pub(super) type WriteBackQueue = BoundedFutureQueue<
 >;
 
 struct Inner<C> {
-    devices: Vec<Box<VdevBoxed<C>>>,
+    devices: Vec<Box<dyn VdevBoxed<C>>>,
     write_back_queue: Mutex<WriteBackQueue>,
     pool: ThreadPool,
 }

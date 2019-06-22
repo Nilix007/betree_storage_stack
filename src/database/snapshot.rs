@@ -167,7 +167,7 @@ impl Snapshot {
     pub fn range<R, K>(
         &self,
         range: R,
-    ) -> Result<Box<Iterator<Item = Result<(CowBytes, SlicedCowBytes)>>>>
+    ) -> Result<Box<dyn Iterator<Item = Result<(CowBytes, SlicedCowBytes)>>>>
     where
         R: RangeBounds<K>,
         K: Borrow<[u8]> + Into<CowBytes>,

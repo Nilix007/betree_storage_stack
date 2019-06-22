@@ -84,7 +84,7 @@ fn parse_size<T: Into<Option<u64>>, U: Into<Option<u64>>>(
     s: &str,
     min: T,
     max: U,
-) -> Result<u64, Box<Error>> {
+) -> Result<u64, Box<dyn Error>> {
     static SUFFICES: [char; 4] = ['k', 'm', 'g', 't'];
     if s.len() == 0 {
         return Err("not a number".into());
@@ -412,7 +412,7 @@ fn run<K: KeyGenerator>(
     sync: bool,
     write: bool,
     verify: bool,
-) -> Result<(), Box<Error>> {
+) -> Result<(), Box<dyn Error>> {
     //    if write {
     //        OpenOptions::new()
     //            .create(true)
@@ -628,12 +628,12 @@ struct WriteLoop<'a, T: 'a, F> {
     sync: F,
 }
 
-impl<'a, T, F> RunLoop<Box<Error>> for WriteLoop<'a, T, F>
+impl<'a, T, F> RunLoop<Box<dyn Error>> for WriteLoop<'a, T, F>
 where
     T: TreeLayer<DefaultMessageAction> + Sync,
-    F: FnOnce() -> Result<(), Box<Error>> + Sync,
+    F: FnOnce() -> Result<(), Box<dyn Error>> + Sync,
 {
-    fn inner_loop(&self, key: &[u8; 4]) -> Result<(), Box<Error>> {
+    fn inner_loop(&self, key: &[u8; 4]) -> Result<(), Box<dyn Error>> {
         let mut vec = Vec::with_capacity(self.block_size as usize);
         vec.resize(self.block_size as usize, key[0] ^ key[1] ^ key[2] ^ key[3]);
         let msg = DefaultMessageAction::insert_msg(&vec);
@@ -641,10 +641,10 @@ where
         self.tree.insert(&key[..], msg.into())?;
         Ok(())
     }
-    fn additional_output(&self) -> Result<(), Box<Error>> {
+    fn additional_output(&self) -> Result<(), Box<dyn Error>> {
         Ok(print!(", tree depth: {}", self.tree.depth()?))
     }
-    fn before_end(self) -> Result<(), Box<Error>> {
+    fn before_end(self) -> Result<(), Box<dyn Error>> {
         println!("Tree depth: {}", self.tree.depth()?);
         (self.sync)()
     }
@@ -655,11 +655,11 @@ struct VerifyLoop<'a, T: 'a> {
     block_size: u64,
 }
 
-impl<'a, T> RunLoop<Box<Error>> for VerifyLoop<'a, T>
+impl<'a, T> RunLoop<Box<dyn Error>> for VerifyLoop<'a, T>
 where
     T: TreeLayer<DefaultMessageAction> + Sync,
 {
-    fn inner_loop(&self, key: &[u8; 4]) -> Result<(), Box<Error>> {
+    fn inner_loop(&self, key: &[u8; 4]) -> Result<(), Box<dyn Error>> {
         //        debug!("Key: {:?}", &key);
         let data = self
             .tree
@@ -704,7 +704,7 @@ where
         );
         Ok(())
     }
-    fn before_end(self) -> Result<(), Box<Error>> {
+    fn before_end(self) -> Result<(), Box<dyn Error>> {
         //        self.tree.dump_cache_statistics();
         Ok(())
     }
@@ -719,7 +719,7 @@ fn vrl_new<T>(
     tree: &T,
     iterations: u64,
     block_size: u64,
-) -> Result<VerifyRangeLoop<T::Range>, Box<Error>>
+) -> Result<VerifyRangeLoop<T::Range>, Box<dyn Error>>
 where
     T: TreeLayer<DefaultMessageAction> + Clone + Sync,
 {
@@ -735,12 +735,12 @@ where
     })
 }
 
-impl<I, E> RunLoop<Box<Error>> for VerifyRangeLoop<I>
+impl<I, E> RunLoop<Box<dyn Error>> for VerifyRangeLoop<I>
 where
-    E: Into<Box<Error>>,
+    E: Into<Box<dyn Error>>,
     I: Iterator<Item = Result<(CowBytes, SlicedCowBytes), E>> + Send,
 {
-    fn inner_loop(&self, key: &[u8; 4]) -> Result<(), Box<Error>> {
+    fn inner_loop(&self, key: &[u8; 4]) -> Result<(), Box<dyn Error>> {
         let (actual_key, data) = loop {
             match self.iter.lock().next().expect("No more entries") {
                 // skip allocation data :)

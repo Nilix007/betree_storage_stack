@@ -71,7 +71,7 @@ pub trait Cache: Send + Sync {
     /// Returns whether the key was present.
     fn change_key<E, F>(&mut self, key: &Self::Key, f: F) -> Result<(), ChangeKeyError<E>>
     where
-        F: FnOnce(&Self::Key, &mut Self::Value, &Fn(&Self::Key) -> bool) -> Result<Self::Key, E>;
+        F: FnOnce(&Self::Key, &mut Self::Value, &dyn Fn(&Self::Key) -> bool) -> Result<Self::Key, E>;
 
     /// Changes the key of a cache entry if present.
     /// Returns whether the key was present.
@@ -81,7 +81,7 @@ pub trait Cache: Send + Sync {
     /// `f` may return `None` if an entry cannot be evicted.
     fn evict<F>(&mut self, f: F) -> Option<(Self::Key, Self::Value)>
     where
-        F: FnMut(&Self::Key, &mut Self::Value, &Fn(&Self::Key) -> bool) -> Option<usize>;
+        F: FnMut(&Self::Key, &mut Self::Value, &dyn Fn(&Self::Key) -> bool) -> Option<usize>;
 
     /// Inserts a new cache entry.
     /// The given `key` must not be present beforehand.
@@ -93,7 +93,7 @@ pub trait Cache: Send + Sync {
 
     /// Returns an iterator that iterates over the cache entry keys in order
     /// from old to new.
-    fn iter<'a>(&'a self) -> Box<Iterator<Item = &'a Self::Key> + 'a>;
+    fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Self::Key> + 'a>;
 
     /// Returns the total size of all cache entries.
     fn size(&self) -> usize;
