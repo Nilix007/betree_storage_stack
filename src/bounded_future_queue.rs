@@ -6,7 +6,7 @@ use futures::future::{ok, ready, IntoFuture};
 use futures::prelude::*;
 use futures::stream::FuturesUnordered;
 use futures::task::Context;
-use futures::{try_ready, Poll, TryFuture};
+use futures::{ready, Poll, TryFuture};
 use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::hash::Hash;
@@ -27,7 +27,7 @@ where
     fn try_poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Result<Self::Ok, Self::Error>> {
         let this = unsafe { Pin::get_unchecked_mut(self) };
         let f = unsafe { Pin::new_unchecked(&mut this.future) };
-        try_ready!(f.try_poll(ctx));
+        ready!(f.try_poll(ctx))?;
         Poll::Ready(Ok(this.key.take().unwrap()))
     }
 }

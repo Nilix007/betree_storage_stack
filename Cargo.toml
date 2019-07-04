@@ -15,13 +15,14 @@ opt-level = 2
 debug = true
 
 [dependencies]
-futures-preview = "0.3.0-alpha.13"
+futures-preview = "0.3.0-alpha.17"
 serde = "1.0"
 serde_derive = "1.0"
 bincode = "1.0"
 error-chain = "0.12"
 libc = "0.2"
-parking_lot = "0.7"
+parking_lot = "0.8"
+lock_api = { version = "0.2", features = ["owning_ref"] }
 owning_ref = "0.4"
 log = "0.4"
 byteorder = "1.0"
