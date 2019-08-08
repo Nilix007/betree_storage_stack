@@ -10,9 +10,9 @@ use futures::future::{ready, IntoFuture};
 use futures::prelude::*;
 use futures::stream::{FuturesOrdered, FuturesUnordered};
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::pin::Pin;
 
 /// This `vdev` will mirror all data to its child vdevs.
 pub struct Mirror<V> {
@@ -54,7 +54,7 @@ where
         data,
         failed_disks,
         inner,
-    } = await!(f)?;
+    } = f.await?;
     inner.stats.read.fetch_add(size.as_u64(), Ordering::Relaxed);
 
     let data = match data {
@@ -77,7 +77,7 @@ where
                 .into_future()
         })
         .collect();
-    while let Some(write_result) = await!(s.next()) {
+    while let Some(write_result) = s.next().await {
         if write_result.is_err() {
             // TODO
         } else {
@@ -115,7 +115,7 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
             for idx in 0..disk_cnt {
                 let idx = (idx + start_idx) % inner.vdevs.len();
                 let f = inner.vdevs[idx].read(size, offset, checksum.clone());
-                match await!(f.into_future()) {
+                match f.into_future().await {
                     Ok(x) => {
                         data = Some(x);
                         break;
@@ -140,7 +140,7 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
                 .iter()
                 .map(|disk| disk.read(size, offset, checksum.clone()).into_future())
                 .collect();
-            let futures: Vec<_> = await!(futures.collect());
+            let futures: Vec<_> = futures.collect().await;
             let mut data = None;
             let mut failed_disks = Vec::new();
             for (idx, result) in futures.into_iter().enumerate() {
@@ -160,27 +160,28 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
 
     fn read_raw(&self, size: Block<u32>, offset: Block<u64>) -> Self::ReadRaw {
         let inner = Arc::clone(&self.inner);
-        let futures: FuturesUnordered<_> = self.inner.vdevs.iter().map(|disk| {
-            let data = alloc_uninitialized(size.to_bytes() as usize);
-            VdevLeafRead::<Box<[u8]>>::read_raw(disk, data, offset).into_future()
-        }).collect();
-        Box::pin(
-            futures
-                .collect::<Vec<_>>()
-                .then(move |result| {
-                    let mut v = Vec::new();
-                    for r in result {
-                        if let Ok(x) = r {
-                            v.push(x);
-                        }
-                    }
-                    if v.is_empty() {
-                        ready(Err(Error::from(ErrorKind::ReadError(inner.id.clone()))))
-                    } else {
-                        ready(Ok(v))
-                    }
-                }),
-        )
+        let futures: FuturesUnordered<_> = self
+            .inner
+            .vdevs
+            .iter()
+            .map(|disk| {
+                let data = alloc_uninitialized(size.to_bytes() as usize);
+                VdevLeafRead::<Box<[u8]>>::read_raw(disk, data, offset).into_future()
+            })
+            .collect();
+        Box::pin(futures.collect::<Vec<_>>().then(move |result| {
+            let mut v = Vec::new();
+            for r in result {
+                if let Ok(x) = r {
+                    v.push(x);
+                }
+            }
+            if v.is_empty() {
+                ready(Err(Error::from(ErrorKind::ReadError(inner.id.clone()))))
+            } else {
+                ready(Ok(v))
+            }
+        }))
     }
 }
 
@@ -202,7 +203,7 @@ impl<V: VdevLeafWrite> VdevWrite for Mirror<V> {
                 .iter()
                 .map(|disk| disk.write_raw(data.clone(), offset, false).into_future())
                 .collect();
-            let results: Vec<_> = await!(futures.collect());
+            let results: Vec<_> = futures.collect().await;
             let total_writes = results.len();
             let mut failed_writes = 0;
             for result in results {

@@ -10,9 +10,9 @@ use futures::future::{ready, IntoFuture};
 use futures::prelude::*;
 use futures::stream::{FuturesOrdered, FuturesUnordered};
 use std::iter::{once, repeat};
+use std::pin::Pin;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::pin::Pin;
 
 /// This `vdev` will generate parity data and stripe all data to its child
 /// vdevs.
@@ -110,48 +110,37 @@ impl<
     type ReadRaw = Pin<Box<dyn Future<Output = Result<Vec<Box<[u8]>>, Error>> + Send + 'static>>;
 
     fn read(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Read {
-        Box::pin(read(
-            Arc::clone(&self.inner),
-            size,
-            offset,
-            checksum,
-            false,
-        ))
+        Box::pin(read(Arc::clone(&self.inner), size, offset, checksum, false))
     }
 
     fn scrub(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Scrub {
-        Box::pin(read(
-            Arc::clone(&self.inner),
-            size,
-            offset,
-            checksum,
-            true,
-        ))
+        Box::pin(read(Arc::clone(&self.inner), size, offset, checksum, true))
     }
 
     fn read_raw(&self, size: Block<u32>, offset: Block<u64>) -> Self::ReadRaw {
         let inner = Arc::clone(&self.inner);
-        let futures: FuturesUnordered<_> = self.inner.vdevs.iter().map(|disk| {
-            let data = alloc_uninitialized(size.to_bytes() as usize);
-            disk.read_raw(data, offset).into_future()
-        }).collect();
-        Box::pin(
-            futures
-                .collect::<Vec<_>>()
-                .then(move |result| {
-                    let mut v = Vec::new();
-                    for r in result {
-                        if let Ok(x) = r {
-                            v.push(x);
-                        }
-                    }
-                    if v.is_empty() {
-                        ready(Err(Error::from(ErrorKind::ReadError(inner.id.clone()))))
-                    } else {
-                        ready(Ok(v))
-                    }
-                }),
-        )
+        let futures: FuturesUnordered<_> = self
+            .inner
+            .vdevs
+            .iter()
+            .map(|disk| {
+                let data = alloc_uninitialized(size.to_bytes() as usize);
+                disk.read_raw(data, offset).into_future()
+            })
+            .collect();
+        Box::pin(futures.collect::<Vec<_>>().then(move |result| {
+            let mut v = Vec::new();
+            for r in result {
+                if let Ok(x) = r {
+                    v.push(x);
+                }
+            }
+            if v.is_empty() {
+                ready(Err(Error::from(ErrorKind::ReadError(inner.id.clone()))))
+            } else {
+                ready(Ok(v))
+            }
+        }))
     }
 }
 
@@ -199,10 +188,7 @@ where
     }
     let mut failed_idx = None;
     let mut faulted = Block(0);
-    for (idx, result) in await!(reads.collect::<Vec<_>>())
-        .into_iter()
-        .enumerate()
-    {
+    for (idx, result) in reads.collect::<Vec<_>>().await.into_iter().enumerate() {
         if result.is_err() {
             faulted += calc_col_length(idx, long_col_len, long_col_cnt);
             if failed_idx.is_none() {
@@ -235,7 +221,7 @@ where
             parity_disk_offset,
         )
         .into_future();
-    let parity_block = match await!(parity_future) {
+    let parity_block = match parity_future.await {
         Ok(data) => data,
         Err(_) => {
             if failed_idx.is_some() {
@@ -287,9 +273,10 @@ where
             parity_disk_offset + 1
         };
 
-        let repaired = match await!(inner.vdevs[bad_disk_idx]
+        let repaired = match inner.vdevs[bad_disk_idx]
             .write_raw(repaired_block, bad_disk_offset, true)
-            .into_future())
+            .into_future()
+            .await
         {
             Ok(()) => faulted,
             Err(_) => Block(0),
@@ -316,9 +303,10 @@ where
             .into())
         } else {
             // Rewrite bad parity block.
-            let repaired = match await!(inner.vdevs[parity_disk_idx]
+            let repaired = match inner.vdevs[parity_disk_idx]
                 .write_raw(new_parity_block, parity_disk_offset, true)
-                .into_future())
+                .into_future()
+                .await
             {
                 Ok(()) => faulted,
                 Err(_) => Block(0),
@@ -389,9 +377,10 @@ where
             &inner.vdevs[bad_disk_idx],
             size,
         );
-        let repaired = match await!(inner.vdevs[bad_disk_idx]
+        let repaired = match inner.vdevs[bad_disk_idx]
             .write_raw(repaired_block, bad_disk_offset, true)
-            .into_future())
+            .into_future()
+            .await
         {
             Ok(()) => faulted,
             Err(_) => Block(0),
