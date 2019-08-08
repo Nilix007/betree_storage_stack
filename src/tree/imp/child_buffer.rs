@@ -37,7 +37,6 @@ mod ser_np {
     {
         N::deserialize(deserializer).map(RwLock::new)
     }
-
 }
 
 impl<N: StaticSize> Size for ChildBuffer<N> {

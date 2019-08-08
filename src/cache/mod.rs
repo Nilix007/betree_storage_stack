@@ -71,7 +71,11 @@ pub trait Cache: Send + Sync {
     /// Returns whether the key was present.
     fn change_key<E, F>(&mut self, key: &Self::Key, f: F) -> Result<(), ChangeKeyError<E>>
     where
-        F: FnOnce(&Self::Key, &mut Self::Value, &dyn Fn(&Self::Key) -> bool) -> Result<Self::Key, E>;
+        F: FnOnce(
+            &Self::Key,
+            &mut Self::Value,
+            &dyn Fn(&Self::Key) -> bool,
+        ) -> Result<Self::Key, E>;
 
     /// Changes the key of a cache entry if present.
     /// Returns whether the key was present.
