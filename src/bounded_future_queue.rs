@@ -17,14 +17,13 @@ struct Helper<K, F> {
     future: F,
 }
 
-impl<K, F> TryFuture for Helper<K, F>
+impl<K, F> Future for Helper<K, F>
 where
     F: TryFuture<Ok = ()>,
 {
-    type Ok = K;
-    type Error = F::Error;
+    type Output = Result<K, F::Error>;
 
-    fn try_poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Result<Self::Ok, Self::Error>> {
+    fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { Pin::get_unchecked_mut(self) };
         let f = unsafe { Pin::new_unchecked(&mut this.future) };
         ready!(f.try_poll(ctx))?;

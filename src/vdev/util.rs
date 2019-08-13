@@ -22,11 +22,10 @@ impl<F: Future, G: Failed> UnfailableJoinAll<F, G> {
     }
 }
 
-impl<F: Future<Output = Result<(), E>>, G: Failed, E> TryFuture for UnfailableJoinAll<F, G> {
-    type Ok = ();
-    type Error = E;
+impl<F: Future<Output = Result<(), E>>, G: Failed, E> Future for UnfailableJoinAll<F, G> {
+    type Output = Result<(), E>;
 
-    fn try_poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Result<Self::Ok, Self::Error>> {
+    fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { Pin::get_unchecked_mut(self) };
         let f = unsafe { Pin::new_unchecked(&mut this.future) };
         let results = ready!(f.poll(ctx));
@@ -58,11 +57,10 @@ impl<F: Future, G: Failed> UnfailableJoinAllPlusOne<F, G> {
     }
 }
 
-impl<F: Future<Output = Result<(), E>>, G: Failed, E> TryFuture for UnfailableJoinAllPlusOne<F, G> {
-    type Ok = ();
-    type Error = E;
+impl<F: Future<Output = Result<(), E>>, G: Failed, E> Future for UnfailableJoinAllPlusOne<F, G> {
+    type Output = Result<(), E>;
 
-    fn try_poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Result<Self::Ok, Self::Error>> {
+    fn poll(self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { Pin::get_unchecked_mut(self) };
         let f = unsafe { Pin::new_unchecked(&mut this.future) };
         let results = ready!(f.poll(ctx));
