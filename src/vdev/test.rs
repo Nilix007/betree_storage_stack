@@ -9,7 +9,8 @@ use futures::future::{ready, MapOk, Ready};
 use futures::prelude::*;
 use parking_lot::Mutex;
 use quickcheck::{Arbitrary, Gen};
-use rand::{Rng, RngCore, SeedableRng, XorShiftRng};
+use rand::{seq::SliceRandom, Rng, RngCore, SeedableRng};
+use rand_xorshift::XorShiftRng;
 use seqlock::SeqLock;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -25,11 +26,12 @@ pub enum FailureMode {
 
 impl Arbitrary for FailureMode {
     fn arbitrary<G: Gen>(g: &mut G) -> Self {
-        *g.choose(&[
+        *[
             FailureMode::NoFail,
             FailureMode::FailOperation,
             FailureMode::BadData,
-        ])
+        ]
+        .choose(g)
         .unwrap()
     }
 }
