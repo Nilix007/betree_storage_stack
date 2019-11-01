@@ -5,8 +5,8 @@
 
 use parking_lot::Mutex;
 use std::cell::UnsafeCell;
-use std::mem::{uninitialized, ManuallyDrop};
-use std::ptr::write;
+use std::mem::MaybeUninit;
+use std::ptr::{drop_in_place, write};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// `AtomicOption` is an `Option` which is `Send + Sync`.
@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 pub struct AtomicOption<T> {
     initialized: AtomicBool,
     lock: Mutex<()>,
-    data: UnsafeCell<ManuallyDrop<T>>,
+    data: UnsafeCell<MaybeUninit<T>>,
 }
 
 unsafe impl<T: Send + Sync> Send for AtomicOption<T> {}
@@ -33,14 +33,17 @@ impl<T> AtomicOption<T> {
         AtomicOption {
             initialized: AtomicBool::new(false),
             lock: Mutex::new(()),
-            data: unsafe { UnsafeCell::new(ManuallyDrop::new(uninitialized())) },
+            data: UnsafeCell::new(MaybeUninit::uninit()),
         }
     }
 
     /// Returns an reference to the inner object or `None`.
     pub fn get(&self) -> Option<&T> {
         if self.initialized.load(Ordering::Relaxed) {
-            unsafe { Some(&*self.data.get()) }
+            unsafe {
+                let p = &*self.data.get();
+                Some(&*p.as_ptr())
+            }
         } else {
             None
         }
@@ -57,7 +60,8 @@ impl<T> AtomicOption<T> {
             panic!();
         }
         unsafe {
-            write(&mut **self.data.get(), x);
+            let p = &mut *self.data.get();
+            write(p.as_mut_ptr(), x);
         }
         self.initialized.store(true, Ordering::Relaxed);
     }
@@ -66,7 +70,10 @@ impl<T> AtomicOption<T> {
 impl<T> Drop for AtomicOption<T> {
     fn drop(&mut self) {
         if self.initialized.load(Ordering::Relaxed) {
-            unsafe { ManuallyDrop::drop(&mut *self.data.get()) }
+            unsafe {
+                let p = &mut *self.data.get();
+                drop_in_place(p.as_mut_ptr());
+            }
         }
     }
 }
