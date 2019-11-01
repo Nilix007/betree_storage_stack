@@ -39,7 +39,7 @@ impl<T> AtomicOption<T> {
 
     /// Returns an reference to the inner object or `None`.
     pub fn get(&self) -> Option<&T> {
-        if self.initialized.load(Ordering::Relaxed) {
+        if self.initialized.load(Ordering::Acquire) {
             unsafe {
                 let p = &*self.data.get();
                 Some(&*p.as_ptr())
@@ -63,13 +63,13 @@ impl<T> AtomicOption<T> {
             let p = &mut *self.data.get();
             write(p.as_mut_ptr(), x);
         }
-        self.initialized.store(true, Ordering::Relaxed);
+        self.initialized.store(true, Ordering::Release);
     }
 }
 
 impl<T> Drop for AtomicOption<T> {
     fn drop(&mut self) {
-        if self.initialized.load(Ordering::Relaxed) {
+        if self.initialized.load(Ordering::Acquire) {
             unsafe {
                 let p = &mut *self.data.get();
                 drop_in_place(p.as_mut_ptr());
