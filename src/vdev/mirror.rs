@@ -50,11 +50,11 @@ where
     V: VdevLeafWrite,
     R: From<ScrubResult>,
 {
-    let ReadResult {
+    let Ok(ReadResult {
         data,
         failed_disks,
         inner,
-    } = f.await?;
+    }) = f.await;
     inner.stats.read.fetch_add(size.as_u64(), Ordering::Relaxed);
 
     let data = match data {
