@@ -15,7 +15,7 @@ opt-level = 2
 debug = true
 
 [dependencies]
-futures-preview = "0.3.0-alpha.19"
+futures = { version = "0.3", features = ["thread-pool"] }
 serde = "1.0"
 serde_derive = "1.0"
 bincode = "1.0"
@@ -36,7 +36,7 @@ itertools = "0.8"
 ref_slice = "1.1"
 env_logger = "0.7"
 scoped_threadpool = "0.1"
-indicatif = "0.13"
+indicatif = "0.14"
 
 [dev-dependencies]
 rand = "0.7"

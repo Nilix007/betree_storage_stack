@@ -6,7 +6,7 @@ use futures::future::{ok, ready, IntoFuture};
 use futures::prelude::*;
 use futures::stream::FuturesUnordered;
 use futures::task::Context;
-use futures::{ready, Poll, TryFuture};
+use futures::{ready, task::Poll, TryFuture};
 use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::hash::Hash;
@@ -112,7 +112,7 @@ impl<K: Eq + Hash, F: TryFuture<Ok = ()>> BoundedFutureQueue<K, F> {
     fn drain_while_above_limit(&mut self, limit: usize) -> Result<(), F::Error> {
         if self.map.len() > limit {
             let amount = self.map.len() - limit;
-            let keys: Vec<_> = block_on(self.queue.by_ref().take(amount as u64).try_collect())?;
+            let keys: Vec<_> = block_on(self.queue.by_ref().take(amount).try_collect())?;
             for key in keys {
                 self.map.remove(&key);
             }
