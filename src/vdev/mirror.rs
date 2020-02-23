@@ -46,15 +46,15 @@ struct ReadResult<V> {
 
 async fn handle_repair<F, V, R>(size: Block<u32>, offset: Block<u64>, f: F) -> Result<R, Error>
 where
-    F: Future<Output = Result<ReadResult<V>, !>> + Send + 'static,
+    F: Future<Output = ReadResult<V>> + Send + 'static,
     V: VdevLeafWrite,
     R: From<ScrubResult>,
 {
-    let Ok(ReadResult {
+    let ReadResult {
         data,
         failed_disks,
         inner,
-    }) = f.await;
+    } = f.await;
     inner.stats.read.fetch_add(size.as_u64(), Ordering::Relaxed);
 
     let data = match data {
@@ -123,11 +123,11 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
                     Err(_) => failed_disks.push(idx),
                 }
             }
-            Ok(ReadResult {
+            ReadResult {
                 data,
                 failed_disks,
                 inner,
-            })
+            }
         };
         Box::pin(handle_repair(size, offset, f))
     }
@@ -149,11 +149,11 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
                     Err(_) => failed_disks.push(idx),
                 }
             }
-            Ok(ReadResult {
+            ReadResult {
                 data,
                 failed_disks,
                 inner,
-            })
+            }
         };
         Box::pin(handle_repair(size, offset, f))
     }
