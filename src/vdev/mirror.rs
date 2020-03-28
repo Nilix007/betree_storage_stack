@@ -9,16 +9,10 @@ use crate::checksum::Checksum;
 use async_trait::async_trait;
 use futures::prelude::*;
 use futures::stream::{FuturesOrdered, FuturesUnordered};
-use std::future::Future;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
 
 /// This `vdev` will mirror all data to its child vdevs.
 pub struct Mirror<V> {
-    inner: Arc<Inner<V>>,
-}
-
-struct Inner<V> {
     vdevs: Box<[V]>,
     id: String,
     stats: AtomicStatistics,
@@ -28,71 +22,67 @@ impl<V> Mirror<V> {
     /// Creates a new `Mirror`.
     pub fn new(vdevs: Box<[V]>, id: String) -> Self {
         Mirror {
-            inner: Arc::new(Inner {
-                vdevs,
-                id,
-                stats: Default::default(),
-            }),
+            vdevs,
+            id,
+            stats: Default::default(),
         }
     }
 }
 
-struct ReadResult<V> {
+struct ReadResult {
     data: Option<Box<[u8]>>,
     failed_disks: Vec<usize>,
-    inner: Arc<Inner<V>>,
 }
 
-async fn handle_repair<F, V, R>(size: Block<u32>, offset: Block<u64>, f: F) -> Result<R, Error>
-where
-    F: Future<Output = ReadResult<V>> + Send + 'static,
-    V: VdevLeafWrite,
-    R: From<ScrubResult>,
-{
-    let ReadResult {
-        data,
-        failed_disks,
-        inner,
-    } = f.await;
-    inner.stats.read.fetch_add(size.as_u64(), Ordering::Relaxed);
+impl<V: VdevLeafWrite> Mirror<V> {
+    async fn handle_repair<R>(
+        &self,
+        size: Block<u32>,
+        offset: Block<u64>,
+        r: ReadResult,
+    ) -> Result<R, Error>
+    where
+        R: From<ScrubResult>,
+    {
+        let ReadResult { data, failed_disks } = r;
+        self.stats.read.fetch_add(size.as_u64(), Ordering::Relaxed);
 
-    let data = match data {
-        Some(data) => data,
-        None => {
-            inner
-                .stats
-                .failed_reads
-                .fetch_add(size.as_u64(), Ordering::Relaxed);
-            bail!(ErrorKind::ReadError(inner.id.clone()));
+        let data = match data {
+            Some(data) => data,
+            None => {
+                self.stats
+                    .failed_reads
+                    .fetch_add(size.as_u64(), Ordering::Relaxed);
+                bail!(ErrorKind::ReadError(self.id.clone()));
+            }
+        };
+        let faulted = failed_disks.len() as u32;
+        let mut total_repaired = 0;
+        let mut s: FuturesUnordered<_> = failed_disks
+            .into_iter()
+            .map(|idx| {
+                self.vdevs[idx]
+                    .write_raw(data.clone(), offset, true)
+                    .into_future()
+            })
+            .collect();
+        while let Some(write_result) = s.next().await {
+            if write_result.is_err() {
+                // TODO
+            } else {
+                total_repaired += 1;
+            }
         }
-    };
-    let faulted = failed_disks.len() as u32;
-    let mut total_repaired = 0;
-    let mut s: FuturesUnordered<_> = failed_disks
-        .into_iter()
-        .map(|idx| {
-            inner.vdevs[idx]
-                .write_raw(data.clone(), offset, true)
-                .into_future()
-        })
-        .collect();
-    while let Some(write_result) = s.next().await {
-        if write_result.is_err() {
-            // TODO
-        } else {
-            total_repaired += 1;
+        self.stats
+            .repaired
+            .fetch_add(u64::from(total_repaired) * size.as_u64(), Ordering::Relaxed);
+        Ok(ScrubResult {
+            data,
+            faulted: size * faulted,
+            repaired: size * total_repaired,
         }
+        .into())
     }
-    inner
-        .stats
-        .repaired
-        .fetch_add(u64::from(total_repaired) * size.as_u64(), Ordering::Relaxed);
-    Ok(ScrubResult {
-        data,
-        faulted: size * faulted,
-        repaired: size * total_repaired,
-    }
-    .into())
 }
 
 #[async_trait]
@@ -105,32 +95,25 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
         offset: Block<u64>,
         checksum: C,
     ) -> Result<Box<[u8]>, Error> {
-        let inner = Arc::clone(&self.inner);
-        let f = async move {
-            // Switch disk every 32 MiB. (which is 2^25 bytes)
-            // TODO 32 MiB too large?
-            let start_idx = (offset.to_bytes() >> 25) as usize % inner.vdevs.len();
-            let mut failed_disks = Vec::new();
-            let mut data = None;
-            let disk_cnt = inner.vdevs.len();
-            for idx in 0..disk_cnt {
-                let idx = (idx + start_idx) % inner.vdevs.len();
-                let f = inner.vdevs[idx].read(size, offset, checksum.clone());
-                match f.into_future().await {
-                    Ok(x) => {
-                        data = Some(x);
-                        break;
-                    }
-                    Err(_) => failed_disks.push(idx),
+        // Switch disk every 32 MiB. (which is 2^25 bytes)
+        // TODO 32 MiB too large?
+        let start_idx = (offset.to_bytes() >> 25) as usize % self.vdevs.len();
+        let mut failed_disks = Vec::new();
+        let mut data = None;
+        let disk_cnt = self.vdevs.len();
+        for idx in 0..disk_cnt {
+            let idx = (idx + start_idx) % self.vdevs.len();
+            let f = self.vdevs[idx].read(size, offset, checksum.clone());
+            match f.into_future().await {
+                Ok(x) => {
+                    data = Some(x);
+                    break;
                 }
+                Err(_) => failed_disks.push(idx),
             }
-            ReadResult {
-                data,
-                failed_disks,
-                inner,
-            }
-        };
-        handle_repair(size, offset, f).await
+        }
+        let r = ReadResult { data, failed_disks };
+        self.handle_repair(size, offset, r).await
     }
 
     async fn scrub(
@@ -139,29 +122,22 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
         offset: Block<u64>,
         checksum: C,
     ) -> Result<ScrubResult, Error> {
-        let inner = Arc::clone(&self.inner);
-        let f = async move {
-            let futures: FuturesOrdered<_> = inner
-                .vdevs
-                .iter()
-                .map(|disk| disk.read(size, offset, checksum.clone()).into_future())
-                .collect();
-            let futures: Vec<_> = futures.collect().await;
-            let mut data = None;
-            let mut failed_disks = Vec::new();
-            for (idx, result) in futures.into_iter().enumerate() {
-                match result {
-                    Ok(x) => data = Some(x),
-                    Err(_) => failed_disks.push(idx),
-                }
+        let futures: FuturesOrdered<_> = self
+            .vdevs
+            .iter()
+            .map(|disk| disk.read(size, offset, checksum.clone()).into_future())
+            .collect();
+        let futures: Vec<_> = futures.collect().await;
+        let mut data = None;
+        let mut failed_disks = Vec::new();
+        for (idx, result) in futures.into_iter().enumerate() {
+            match result {
+                Ok(x) => data = Some(x),
+                Err(_) => failed_disks.push(idx),
             }
-            ReadResult {
-                data,
-                failed_disks,
-                inner,
-            }
-        };
-        handle_repair(size, offset, f).await
+        }
+        let r = ReadResult { data, failed_disks };
+        self.handle_repair(size, offset, r).await
     }
 
     async fn read_raw(
@@ -169,9 +145,7 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
         size: Block<u32>,
         offset: Block<u64>,
     ) -> Result<Vec<Box<[u8]>>, Error> {
-        let inner = Arc::clone(&self.inner);
         let futures: FuturesUnordered<_> = self
-            .inner
             .vdevs
             .iter()
             .map(|disk| {
@@ -187,7 +161,7 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
             }
         }
         if v.is_empty() {
-            Err(Error::from(ErrorKind::ReadError(inner.id.clone())))
+            Err(Error::from(ErrorKind::ReadError(self.id.clone())))
         } else {
             Ok(v)
         }
@@ -197,14 +171,12 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
 #[async_trait]
 impl<V: VdevLeafWrite + 'static> VdevWrite for Mirror<V> {
     async fn write(&self, data: Box<[u8]>, offset: Block<u64>) -> Result<(), Error> {
-        let inner = Arc::clone(&self.inner);
         let size = Block::from_bytes(data.len() as u32);
         let data = SplittableBuffer::new(data);
-        inner
-            .stats
+        self.stats
             .written
             .fetch_add(size.as_u64(), Ordering::Relaxed);
-        let futures: FuturesUnordered<_> = inner
+        let futures: FuturesUnordered<_> = self
             .vdevs
             .iter()
             .map(|disk| disk.write_raw(data.clone(), offset, false).into_future())
@@ -218,16 +190,15 @@ impl<V: VdevLeafWrite + 'static> VdevWrite for Mirror<V> {
         if failed_writes < total_writes {
             Ok(())
         } else {
-            inner
-                .stats
+            self.stats
                 .failed_writes
                 .fetch_add(size.as_u64(), Ordering::Relaxed);
-            bail!(ErrorKind::WriteError(inner.id.clone()))
+            bail!(ErrorKind::WriteError(self.id.clone()))
         }
     }
 
     fn flush(&self) -> Result<(), Error> {
-        for vdev in self.inner.vdevs.iter() {
+        for vdev in self.vdevs.iter() {
             vdev.flush()?;
         }
         Ok(())
@@ -235,34 +206,23 @@ impl<V: VdevLeafWrite + 'static> VdevWrite for Mirror<V> {
 
     async fn write_raw(&self, data: Box<[u8]>, offset: Block<u64>) -> Result<(), Error> {
         let data = SplittableBuffer::new(data);
-        let futures = self
-            .inner
+        let futures: FuturesUnordered<_> = self
             .vdevs
             .iter()
             .map(|disk| disk.write_raw(data.clone(), offset, false).into_future())
             .collect();
-        UnfailableJoinAll::new(
-            futures,
-            FailedWriteUpdateStats {
-                inner: Arc::clone(&self.inner),
-                size: Block::from_bytes(data.len() as u32),
-            },
-        )
-        .await
-    }
-}
 
-pub struct FailedWriteUpdateStats<V> {
-    inner: Arc<Inner<V>>,
-    size: Block<u32>,
-}
-
-impl<V> Failed for FailedWriteUpdateStats<V> {
-    fn failed(self) {
-        self.inner
-            .stats
-            .failed_writes
-            .fetch_add(self.size.as_u64(), Ordering::Relaxed);
+        let results: Vec<_> = futures.collect().await;
+        for result in results {
+            if let Err(e) = result {
+                self.stats.failed_writes.fetch_add(
+                    Block::from_bytes(data.len() as u32).as_u64(),
+                    Ordering::Relaxed,
+                );
+                return Err(e);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -273,11 +233,11 @@ impl<V: Vdev> Vdev for Mirror<V> {
     }
 
     fn size(&self) -> Block<u64> {
-        self.inner.vdevs.iter().map(Vdev::size).min().unwrap()
+        self.vdevs.iter().map(Vdev::size).min().unwrap()
     }
 
     fn num_disks(&self) -> usize {
-        self.inner.vdevs.len()
+        self.vdevs.len()
     }
 
     fn effective_free_size(&self, free_size: Block<u64>) -> Block<u64> {
@@ -285,15 +245,15 @@ impl<V: Vdev> Vdev for Mirror<V> {
         free_size
     }
     fn id(&self) -> &str {
-        &self.inner.id
+        &self.id
     }
 
     fn stats(&self) -> Statistics {
-        self.inner.stats.as_stats()
+        self.stats.as_stats()
     }
 
     fn for_each_child(&self, f: &mut dyn FnMut(&dyn Vdev)) {
-        for vdev in self.inner.vdevs.iter() {
+        for vdev in self.vdevs.iter() {
             f(vdev);
         }
     }
@@ -468,7 +428,7 @@ mod tests {
 
             for idx in 0..num_disks as usize {
                 if idx != write_non_failing_disk_idx {
-                    vdev.inner.vdevs[idx].fail_writes(write_failure_mode);
+                    vdev.vdevs[idx].fail_writes(write_failure_mode);
                 }
             }
             let data = generate_data(idx, offset, size);
@@ -489,7 +449,7 @@ mod tests {
             block_on(vdev.read(size, offset, checksum)).unwrap();
 
             for idx in 0..num_disks as usize {
-                vdev.inner.vdevs[idx].fail_writes(FailureMode::NoFail);
+                vdev.vdevs[idx].fail_writes(FailureMode::NoFail);
             }
 
             let scrub_result = block_on(vdev.scrub(size, offset, checksum)).unwrap();
@@ -499,14 +459,14 @@ mod tests {
 
             for idx in 0..num_disks as usize {
                 if idx != read_non_failing_disk_idx {
-                    vdev.inner.vdevs[idx].fail_reads(read_failure_mode);
+                    vdev.vdevs[idx].fail_reads(read_failure_mode);
                 }
             }
 
             block_on(vdev.read(size, offset, checksum)).unwrap();
 
             for idx in 0..num_disks as usize {
-                vdev.inner.vdevs[idx].fail_reads(FailureMode::NoFail);
+                vdev.vdevs[idx].fail_reads(FailureMode::NoFail);
             }
         }
         TestResult::passed()

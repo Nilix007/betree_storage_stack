@@ -14,7 +14,6 @@ use rand_xorshift::XorShiftRng;
 use seqlock::SeqLock;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FailureMode {
@@ -37,33 +36,6 @@ impl Arbitrary for FailureMode {
 }
 
 pub struct FailingLeafVdev {
-    inner: Arc<Inner>,
-}
-
-impl FailingLeafVdev {
-    pub fn new(size: Block<u32>, id: String) -> Self {
-        FailingLeafVdev {
-            inner: Arc::new(Inner {
-                buffer: Mutex::new(vec![0; size.to_bytes() as usize].into_boxed_slice()),
-                id,
-                fail_reads: SeqLock::new(FailureMode::NoFail),
-                fail_writes: SeqLock::new(FailureMode::NoFail),
-                fail_flushes: SeqLock::new(false),
-                stats: Default::default(),
-            }),
-        }
-    }
-
-    pub fn fail_writes(&self, failure_mode: FailureMode) {
-        *self.inner.fail_writes.lock_write() = failure_mode;
-    }
-
-    pub fn fail_reads(&self, failure_mode: FailureMode) {
-        *self.inner.fail_reads.lock_write() = failure_mode;
-    }
-}
-
-struct Inner {
     buffer: Mutex<Box<[u8]>>,
     id: String,
     fail_reads: SeqLock<FailureMode>,
@@ -73,20 +45,41 @@ struct Inner {
 }
 
 impl FailingLeafVdev {
+    pub fn new(size: Block<u32>, id: String) -> Self {
+        FailingLeafVdev {
+            buffer: Mutex::new(vec![0; size.to_bytes() as usize].into_boxed_slice()),
+            id,
+            fail_reads: SeqLock::new(FailureMode::NoFail),
+            fail_writes: SeqLock::new(FailureMode::NoFail),
+            fail_flushes: SeqLock::new(false),
+            stats: Default::default(),
+        }
+    }
+
+    pub fn fail_writes(&self, failure_mode: FailureMode) {
+        *self.fail_writes.lock_write() = failure_mode;
+    }
+
+    pub fn fail_reads(&self, failure_mode: FailureMode) {
+        *self.fail_reads.lock_write() = failure_mode;
+    }
+}
+
+impl FailingLeafVdev {
     fn handle_read(&self, size: Block<u32>, offset: Block<u64>) -> Result<Box<[u8]>, Error> {
         let size = size.to_bytes() as usize;
         let offset = offset.to_bytes() as usize;
         let end_offset = offset + size;
 
-        match self.inner.fail_reads.read() {
+        match self.fail_reads.read() {
             FailureMode::NoFail => {
-                let b = self.inner.buffer.lock()[offset..end_offset]
+                let b = self.buffer.lock()[offset..end_offset]
                     .to_vec()
                     .into_boxed_slice();
                 Ok(b)
             }
             FailureMode::FailOperation | FailureMode::BadData => {
-                Err(ErrorKind::ReadError(self.inner.id.clone()).into())
+                Err(ErrorKind::ReadError(self.id.clone()).into())
             }
             FailureMode::Panic => panic!(),
         }
@@ -104,7 +97,7 @@ impl<C: Checksum> VdevRead<C> for FailingLeafVdev {
         let b = self.handle_read(size, offset)?;
         match checksum.verify(&b) {
             Ok(()) => Ok(b),
-            Err(_) => Err(ErrorKind::ReadError(self.inner.id.clone()).into()),
+            Err(_) => Err(ErrorKind::ReadError(self.id.clone()).into()),
         }
     }
 
@@ -138,7 +131,7 @@ impl Vdev for FailingLeafVdev {
     }
 
     fn size(&self) -> Block<u64> {
-        Block::from_bytes(self.inner.buffer.lock().len() as u64)
+        Block::from_bytes(self.buffer.lock().len() as u64)
     }
 
     fn effective_free_size(&self, free_size: Block<u64>) -> Block<u64> {
@@ -146,11 +139,11 @@ impl Vdev for FailingLeafVdev {
     }
 
     fn id(&self) -> &str {
-        &self.inner.id
+        &self.id
     }
 
     fn stats(&self) -> Statistics {
-        self.inner.stats.as_stats()
+        self.stats.as_stats()
     }
 
     fn for_each_child(&self, _f: &mut dyn FnMut(&dyn Vdev)) {}
@@ -164,27 +157,23 @@ impl Vdev for FailingLeafVdev {
 impl<T: AsMut<[u8]> + Send + 'static> VdevLeafRead<T> for FailingLeafVdev {
     async fn read_raw(&self, mut buf: T, offset: Block<u64>) -> Result<T, Error> {
         let size = Block::from_bytes(buf.as_mut().len() as u32);
-        self.inner
-            .stats
-            .read
-            .fetch_add(size.as_u64(), Ordering::Relaxed);
+        self.stats.read.fetch_add(size.as_u64(), Ordering::Relaxed);
 
         let offset = offset.to_bytes() as usize;
         let byte_size = size.to_bytes() as usize;
         let end_offset = offset + byte_size;
         assert!(
-            end_offset <= self.inner.buffer.lock().len(),
-            format!("{} <= {}", end_offset, self.inner.buffer.lock().len())
+            end_offset <= self.buffer.lock().len(),
+            format!("{} <= {}", end_offset, self.buffer.lock().len())
         );
 
-        let v = match self.inner.fail_reads.read() {
-            FailureMode::NoFail => self.inner.buffer.lock()[offset..end_offset].to_vec(),
+        let v = match self.fail_reads.read() {
+            FailureMode::NoFail => self.buffer.lock()[offset..end_offset].to_vec(),
             FailureMode::FailOperation => {
-                self.inner
-                    .stats
+                self.stats
                     .failed_reads
                     .fetch_add(size.as_u64(), Ordering::Relaxed);
-                return Err(Error::from(ErrorKind::ReadError(self.inner.id.clone())));
+                return Err(Error::from(ErrorKind::ReadError(self.id.clone())));
             }
             FailureMode::BadData => (0..byte_size)
                 .map(|x| (3 * x + offset) as u8)
@@ -196,8 +185,7 @@ impl<T: AsMut<[u8]> + Send + 'static> VdevLeafRead<T> for FailingLeafVdev {
     }
 
     fn checksum_error_occurred(&self, size: Block<u32>) {
-        self.inner
-            .stats
+        self.stats
             .checksum_errors
             .fetch_add(size.as_u64(), Ordering::Relaxed);
     }
@@ -212,22 +200,20 @@ impl VdevLeafWrite for FailingLeafVdev {
         is_repair: bool,
     ) -> Result<(), Error> {
         let size_in_blocks = Block::from_bytes(data.as_ref().len() as u64).as_u64();
-        self.inner
-            .stats
+        self.stats
             .written
             .fetch_add(size_in_blocks, Ordering::Relaxed);
 
         let offset = offset.to_bytes() as usize;
         let end_offset = offset + data.as_ref().len();
         let bad_data;
-        let slice = match self.inner.fail_writes.read() {
+        let slice = match self.fail_writes.read() {
             FailureMode::NoFail => &data.as_ref()[..],
             FailureMode::FailOperation => {
-                self.inner
-                    .stats
+                self.stats
                     .failed_writes
                     .fetch_add(size_in_blocks, Ordering::Relaxed);
-                return Err(Error::from(ErrorKind::WriteError(self.inner.id.clone())));
+                return Err(Error::from(ErrorKind::WriteError(self.id.clone())));
             }
             FailureMode::BadData => {
                 bad_data = (0..data.as_ref().len())
@@ -237,10 +223,9 @@ impl VdevLeafWrite for FailingLeafVdev {
             }
             FailureMode::Panic => panic!(),
         };
-        self.inner.buffer.lock()[offset..end_offset].copy_from_slice(slice);
+        self.buffer.lock()[offset..end_offset].copy_from_slice(slice);
         if is_repair {
-            self.inner
-                .stats
+            self.stats
                 .repaired
                 .fetch_add(size_in_blocks, Ordering::Relaxed);
         }
@@ -248,8 +233,8 @@ impl VdevLeafWrite for FailingLeafVdev {
     }
 
     fn flush(&self) -> Result<(), Error> {
-        if self.inner.fail_flushes.read() {
-            Err(Error::from(ErrorKind::WriteError(self.inner.id.clone())))
+        if self.fail_flushes.read() {
+            Err(Error::from(ErrorKind::WriteError(self.id.clone())))
         } else {
             Ok(())
         }

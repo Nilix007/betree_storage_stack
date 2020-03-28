@@ -5,7 +5,6 @@ use super::{
 };
 use crate::checksum::Checksum;
 use async_trait::async_trait;
-use futures::future::lazy;
 use libc::{c_ulong, ioctl};
 use std::fs;
 use std::io;
@@ -13,14 +12,9 @@ use std::os::unix::fs::FileExt;
 use std::os::unix::fs::FileTypeExt;
 use std::os::unix::io::AsRawFd;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
 
 /// `LeafVdev` that is backed by a file.
 pub struct File {
-    inner: Arc<Inner>,
-}
-
-struct Inner {
     file: fs::File,
     id: String,
     size: Block<u64>,
@@ -42,12 +36,10 @@ impl File {
             ));
         };
         Ok(File {
-            inner: Arc::new(Inner {
-                file,
-                id,
-                size,
-                stats: Default::default(),
-            }),
+            file,
+            id,
+            size,
+            stats: Default::default(),
         })
     }
 }
@@ -72,40 +64,28 @@ impl<C: Checksum> VdevRead<C> for File {
         offset: Block<u64>,
         checksum: C,
     ) -> Result<Box<[u8]>, Error> {
-        self.inner
-            .stats
-            .read
-            .fetch_add(size.as_u64(), Ordering::Relaxed);
-        let inner = Arc::clone(&self.inner);
-        lazy(move |_| {
-            let size_in_bytes = size.to_bytes() as usize;
-            let mut buf = alloc_uninitialized(size_in_bytes);
-            match inner.file.read_exact_at(&mut buf, offset.to_bytes()) {
-                Ok(()) => {}
-                Err(e) => {
-                    inner
-                        .stats
-                        .failed_reads
-                        .fetch_add(size.as_u64(), Ordering::Relaxed);
-                    bail!(e)
-                }
-            };
-            match checksum
-                .verify(&buf)
-                .map_err(Error::from)
-                .chain_err(|| ErrorKind::ReadError(inner.id.clone()))
-            {
-                Ok(()) => Ok(buf),
-                Err(e) => {
-                    inner
-                        .stats
-                        .checksum_errors
-                        .fetch_add(size.as_u64(), Ordering::Relaxed);
-                    Err(e)
-                }
+        self.stats.read.fetch_add(size.as_u64(), Ordering::Relaxed);
+        let size_in_bytes = size.to_bytes() as usize;
+        let mut buf = alloc_uninitialized(size_in_bytes);
+        if let Err(e) = self.file.read_exact_at(&mut buf, offset.to_bytes()) {
+            self.stats
+                .failed_reads
+                .fetch_add(size.as_u64(), Ordering::Relaxed);
+            bail!(e)
+        }
+        match checksum
+            .verify(&buf)
+            .map_err(Error::from)
+            .chain_err(|| ErrorKind::ReadError(self.id.clone()))
+        {
+            Ok(()) => Ok(buf),
+            Err(e) => {
+                self.stats
+                    .checksum_errors
+                    .fetch_add(size.as_u64(), Ordering::Relaxed);
+                Err(e)
             }
-        })
-        .await
+        }
     }
 
     async fn scrub(
@@ -127,24 +107,18 @@ impl<C: Checksum> VdevRead<C> for File {
         size: Block<u32>,
         offset: Block<u64>,
     ) -> Result<Vec<Box<[u8]>>, Error> {
-        self.inner
-            .stats
-            .read
-            .fetch_add(size.as_u64(), Ordering::Relaxed);
-        let inner = Arc::clone(&self.inner);
+        self.stats.read.fetch_add(size.as_u64(), Ordering::Relaxed);
         let size_in_bytes = size.to_bytes() as usize;
         let mut buf = alloc_uninitialized(size_in_bytes);
-        match inner.file.read_exact_at(&mut buf, offset.to_bytes()) {
-            Ok(()) => {}
+        match self.file.read_exact_at(&mut buf, offset.to_bytes()) {
+            Ok(()) => Ok(vec![buf]),
             Err(e) => {
-                inner
-                    .stats
+                self.stats
                     .failed_reads
                     .fetch_add(size.as_u64(), Ordering::Relaxed);
                 bail!(e)
             }
-        };
-        Ok(vec![buf])
+        }
     }
 }
 
@@ -158,7 +132,7 @@ impl Vdev for File {
     }
 
     fn size(&self) -> Block<u64> {
-        self.inner.size
+        self.size
     }
 
     fn effective_free_size(&self, free_size: Block<u64>) -> Block<u64> {
@@ -166,11 +140,11 @@ impl Vdev for File {
     }
 
     fn id(&self) -> &str {
-        &self.inner.id
+        &self.id
     }
 
     fn stats(&self) -> Statistics {
-        self.inner.stats.as_stats()
+        self.stats.as_stats()
     }
 
     fn for_each_child(&self, _f: &mut dyn FnMut(&dyn Vdev)) {}
@@ -180,16 +154,11 @@ impl Vdev for File {
 impl<T: AsMut<[u8]> + Send + 'static> VdevLeafRead<T> for File {
     async fn read_raw(&self, mut buf: T, offset: Block<u64>) -> Result<T, Error> {
         let size = Block::from_bytes(buf.as_mut().len() as u32);
-        self.inner
-            .stats
-            .read
-            .fetch_add(size.as_u64(), Ordering::Relaxed);
-        let inner = Arc::clone(&self.inner);
-        match inner.file.read_exact_at(buf.as_mut(), offset.to_bytes()) {
+        self.stats.read.fetch_add(size.as_u64(), Ordering::Relaxed);
+        match self.file.read_exact_at(buf.as_mut(), offset.to_bytes()) {
             Ok(()) => Ok(buf),
             Err(e) => {
-                inner
-                    .stats
+                self.stats
                     .failed_reads
                     .fetch_add(size.as_u64(), Ordering::Relaxed);
                 bail!(e)
@@ -198,8 +167,7 @@ impl<T: AsMut<[u8]> + Send + 'static> VdevLeafRead<T> for File {
     }
 
     fn checksum_error_occurred(&self, size: Block<u32>) {
-        self.inner
-            .stats
+        self.stats
             .checksum_errors
             .fetch_add(size.as_u64(), Ordering::Relaxed);
     }
@@ -214,26 +182,21 @@ impl VdevLeafWrite for File {
         is_repair: bool,
     ) -> Result<(), Error> {
         let block_cnt = Block::from_bytes(data.as_ref().len() as u64).as_u64();
-        self.inner
-            .stats
-            .written
-            .fetch_add(block_cnt, Ordering::Relaxed);
-        let inner = Arc::clone(&self.inner);
-        match inner
+        self.stats.written.fetch_add(block_cnt, Ordering::Relaxed);
+        match self
             .file
             .write_all_at(data.as_ref(), offset.to_bytes())
             .map_err(Error::from)
-            .chain_err(|| ErrorKind::WriteError(inner.id.clone()))
+            .chain_err(|| ErrorKind::WriteError(self.id.clone()))
         {
             Ok(()) => {
                 if is_repair {
-                    inner.stats.repaired.fetch_add(block_cnt, Ordering::Relaxed);
+                    self.stats.repaired.fetch_add(block_cnt, Ordering::Relaxed);
                 }
                 Ok(())
             }
             Err(e) => {
-                inner
-                    .stats
+                self.stats
                     .failed_writes
                     .fetch_add(block_cnt, Ordering::Relaxed);
                 Err(e)
@@ -241,6 +204,6 @@ impl VdevLeafWrite for File {
         }
     }
     fn flush(&self) -> Result<(), Error> {
-        Ok(self.inner.file.sync_data()?)
+        Ok(self.file.sync_data()?)
     }
 }
