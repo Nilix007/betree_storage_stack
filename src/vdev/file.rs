@@ -4,15 +4,14 @@ use super::{
     AtomicStatistics, Block, ScrubResult, Statistics, Vdev, VdevLeafRead, VdevLeafWrite, VdevRead,
 };
 use crate::checksum::Checksum;
-use futures::future::{lazy, ready, Ready};
-use futures::prelude::*;
+use async_trait::async_trait;
+use futures::future::lazy;
 use libc::{c_ulong, ioctl};
 use std::fs;
 use std::io;
 use std::os::unix::fs::FileExt;
 use std::os::unix::fs::FileTypeExt;
 use std::os::unix::io::AsRawFd;
-use std::pin::Pin;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -65,18 +64,20 @@ fn get_block_device_size(file: &fs::File) -> Result<Block<u64>, io::Error> {
     }
 }
 
+#[async_trait]
 impl<C: Checksum> VdevRead<C> for File {
-    type Read = Pin<Box<dyn Future<Output = Result<Box<[u8]>, Error>> + Send>>;
-    type Scrub = Pin<Box<dyn Future<Output = Result<ScrubResult, Error>> + Send>>;
-    type ReadRaw = Pin<Box<dyn Future<Output = Result<Vec<Box<[u8]>>, Error>> + Send>>;
-
-    fn read(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Read {
+    async fn read(
+        &self,
+        size: Block<u32>,
+        offset: Block<u64>,
+        checksum: C,
+    ) -> Result<Box<[u8]>, Error> {
         self.inner
             .stats
             .read
             .fetch_add(size.as_u64(), Ordering::Relaxed);
         let inner = Arc::clone(&self.inner);
-        Box::pin(lazy(move |_| {
+        lazy(move |_| {
             let size_in_bytes = size.to_bytes() as usize;
             let mut buf = alloc_uninitialized(size_in_bytes);
             match inner.file.read_exact_at(&mut buf, offset.to_bytes()) {
@@ -103,40 +104,47 @@ impl<C: Checksum> VdevRead<C> for File {
                     Err(e)
                 }
             }
-        }))
+        })
+        .await
     }
 
-    fn scrub(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Scrub {
-        fn to_scrub_result(data: Box<[u8]>) -> Ready<Result<ScrubResult, Error>> {
-            ready(Ok(ScrubResult {
-                data,
-                repaired: Block(0),
-                faulted: Block(0),
-            }))
-        }
-        Box::pin(self.read(size, offset, checksum).and_then(to_scrub_result))
+    async fn scrub(
+        &self,
+        size: Block<u32>,
+        offset: Block<u64>,
+        checksum: C,
+    ) -> Result<ScrubResult, Error> {
+        let data = self.read(size, offset, checksum).await?;
+        Ok(ScrubResult {
+            data,
+            repaired: Block(0),
+            faulted: Block(0),
+        })
     }
-    fn read_raw(&self, size: Block<u32>, offset: Block<u64>) -> Self::ReadRaw {
+
+    async fn read_raw(
+        &self,
+        size: Block<u32>,
+        offset: Block<u64>,
+    ) -> Result<Vec<Box<[u8]>>, Error> {
         self.inner
             .stats
             .read
             .fetch_add(size.as_u64(), Ordering::Relaxed);
         let inner = Arc::clone(&self.inner);
-        Box::pin(lazy(move |_| {
-            let size_in_bytes = size.to_bytes() as usize;
-            let mut buf = alloc_uninitialized(size_in_bytes);
-            match inner.file.read_exact_at(&mut buf, offset.to_bytes()) {
-                Ok(()) => {}
-                Err(e) => {
-                    inner
-                        .stats
-                        .failed_reads
-                        .fetch_add(size.as_u64(), Ordering::Relaxed);
-                    bail!(e)
-                }
-            };
-            Ok(vec![buf])
-        }))
+        let size_in_bytes = size.to_bytes() as usize;
+        let mut buf = alloc_uninitialized(size_in_bytes);
+        match inner.file.read_exact_at(&mut buf, offset.to_bytes()) {
+            Ok(()) => {}
+            Err(e) => {
+                inner
+                    .stats
+                    .failed_reads
+                    .fetch_add(size.as_u64(), Ordering::Relaxed);
+                bail!(e)
+            }
+        };
+        Ok(vec![buf])
     }
 }
 
@@ -168,28 +176,25 @@ impl Vdev for File {
     fn for_each_child(&self, _f: &mut dyn FnMut(&dyn Vdev)) {}
 }
 
+#[async_trait]
 impl<T: AsMut<[u8]> + Send + 'static> VdevLeafRead<T> for File {
-    type ReadRaw = Pin<Box<dyn Future<Output = Result<T, Error>> + Send>>;
-
-    fn read_raw(&self, mut buf: T, offset: Block<u64>) -> Self::ReadRaw {
+    async fn read_raw(&self, mut buf: T, offset: Block<u64>) -> Result<T, Error> {
         let size = Block::from_bytes(buf.as_mut().len() as u32);
         self.inner
             .stats
             .read
             .fetch_add(size.as_u64(), Ordering::Relaxed);
         let inner = Arc::clone(&self.inner);
-        Box::pin(lazy(move |_| {
-            match inner.file.read_exact_at(buf.as_mut(), offset.to_bytes()) {
-                Ok(()) => Ok(buf),
-                Err(e) => {
-                    inner
-                        .stats
-                        .failed_reads
-                        .fetch_add(size.as_u64(), Ordering::Relaxed);
-                    bail!(e)
-                }
+        match inner.file.read_exact_at(buf.as_mut(), offset.to_bytes()) {
+            Ok(()) => Ok(buf),
+            Err(e) => {
+                inner
+                    .stats
+                    .failed_reads
+                    .fetch_add(size.as_u64(), Ordering::Relaxed);
+                bail!(e)
             }
-        }))
+        }
     }
 
     fn checksum_error_occurred(&self, size: Block<u32>) {
@@ -200,43 +205,40 @@ impl<T: AsMut<[u8]> + Send + 'static> VdevLeafRead<T> for File {
     }
 }
 
+#[async_trait]
 impl VdevLeafWrite for File {
-    type WriteRaw = Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>;
-
-    fn write_raw<T: AsRef<[u8]> + Send + 'static>(
+    async fn write_raw<T: AsRef<[u8]> + Send + 'static>(
         &self,
         data: T,
         offset: Block<u64>,
         is_repair: bool,
-    ) -> Self::WriteRaw {
+    ) -> Result<(), Error> {
         let block_cnt = Block::from_bytes(data.as_ref().len() as u64).as_u64();
         self.inner
             .stats
             .written
             .fetch_add(block_cnt, Ordering::Relaxed);
         let inner = Arc::clone(&self.inner);
-        Box::pin(lazy(move |_| {
-            match inner
-                .file
-                .write_all_at(data.as_ref(), offset.to_bytes())
-                .map_err(Error::from)
-                .chain_err(|| ErrorKind::WriteError(inner.id.clone()))
-            {
-                Ok(()) => {
-                    if is_repair {
-                        inner.stats.repaired.fetch_add(block_cnt, Ordering::Relaxed);
-                    }
-                    Ok(())
+        match inner
+            .file
+            .write_all_at(data.as_ref(), offset.to_bytes())
+            .map_err(Error::from)
+            .chain_err(|| ErrorKind::WriteError(inner.id.clone()))
+        {
+            Ok(()) => {
+                if is_repair {
+                    inner.stats.repaired.fetch_add(block_cnt, Ordering::Relaxed);
                 }
-                Err(e) => {
-                    inner
-                        .stats
-                        .failed_writes
-                        .fetch_add(block_cnt, Ordering::Relaxed);
-                    Err(e)
-                }
+                Ok(())
             }
-        }))
+            Err(e) => {
+                inner
+                    .stats
+                    .failed_writes
+                    .fetch_add(block_cnt, Ordering::Relaxed);
+                Err(e)
+            }
+        }
     }
     fn flush(&self) -> Result<(), Error> {
         Ok(self.inner.file.sync_data()?)

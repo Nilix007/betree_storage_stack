@@ -4,8 +4,8 @@ use super::{
 };
 use crate::checksum::Checksum;
 use crate::checksum::{Builder, State, XxHash, XxHashBuilder};
+use async_trait::async_trait;
 use futures::executor::block_on;
-use futures::future::{ready, MapOk, Ready};
 use futures::prelude::*;
 use parking_lot::Mutex;
 use quickcheck::{Arbitrary, Gen};
@@ -93,34 +93,42 @@ impl FailingLeafVdev {
     }
 }
 
+#[async_trait]
 impl<C: Checksum> VdevRead<C> for FailingLeafVdev {
-    type Read = Ready<Result<Box<[u8]>, Error>>;
-    type Scrub = MapOk<Self::Read, fn(Box<[u8]>) -> ScrubResult>;
-    type ReadRaw = Ready<Result<Vec<Box<[u8]>>, Error>>;
-
-    fn read(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Read {
-        ready(
-            self.handle_read(size, offset)
-                .and_then(|b| match checksum.verify(&b) {
-                    Ok(()) => Ok(b),
-                    Err(_) => Err(ErrorKind::ReadError(self.inner.id.clone()).into()),
-                }),
-        )
-    }
-
-    fn scrub(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Scrub {
-        fn to_scrub_result(data: Box<[u8]>) -> ScrubResult {
-            ScrubResult {
-                data,
-                faulted: Block(0),
-                repaired: Block(0),
-            }
+    async fn read(
+        &self,
+        size: Block<u32>,
+        offset: Block<u64>,
+        checksum: C,
+    ) -> Result<Box<[u8]>, Error> {
+        let b = self.handle_read(size, offset)?;
+        match checksum.verify(&b) {
+            Ok(()) => Ok(b),
+            Err(_) => Err(ErrorKind::ReadError(self.inner.id.clone()).into()),
         }
-        self.read(size, offset, checksum).map_ok(to_scrub_result)
     }
 
-    fn read_raw(&self, size: Block<u32>, offset: Block<u64>) -> Self::ReadRaw {
-        ready(self.handle_read(size, offset).map(|b| vec![b]))
+    async fn scrub(
+        &self,
+        size: Block<u32>,
+        offset: Block<u64>,
+        checksum: C,
+    ) -> Result<ScrubResult, Error> {
+        let data = self.read(size, offset, checksum).await?;
+        Ok(ScrubResult {
+            data,
+            faulted: Block(0),
+            repaired: Block(0),
+        })
+    }
+
+    async fn read_raw(
+        &self,
+        size: Block<u32>,
+        offset: Block<u64>,
+    ) -> Result<Vec<Box<[u8]>>, Error> {
+        let b = self.handle_read(size, offset)?;
+        Ok(vec![b])
     }
 }
 
@@ -152,10 +160,9 @@ impl Vdev for FailingLeafVdev {
     }
 }
 
+#[async_trait]
 impl<T: AsMut<[u8]> + Send + 'static> VdevLeafRead<T> for FailingLeafVdev {
-    type ReadRaw = Ready<Result<T, Error>>;
-
-    fn read_raw(&self, mut buf: T, offset: Block<u64>) -> Self::ReadRaw {
+    async fn read_raw(&self, mut buf: T, offset: Block<u64>) -> Result<T, Error> {
         let size = Block::from_bytes(buf.as_mut().len() as u32);
         self.inner
             .stats
@@ -177,9 +184,7 @@ impl<T: AsMut<[u8]> + Send + 'static> VdevLeafRead<T> for FailingLeafVdev {
                     .stats
                     .failed_reads
                     .fetch_add(size.as_u64(), Ordering::Relaxed);
-                return ready(Err(Error::from(ErrorKind::ReadError(
-                    self.inner.id.clone(),
-                ))));
+                return Err(Error::from(ErrorKind::ReadError(self.inner.id.clone())));
             }
             FailureMode::BadData => (0..byte_size)
                 .map(|x| (3 * x + offset) as u8)
@@ -187,7 +192,7 @@ impl<T: AsMut<[u8]> + Send + 'static> VdevLeafRead<T> for FailingLeafVdev {
             FailureMode::Panic => panic!(),
         };
         buf.as_mut().copy_from_slice(&v);
-        ready(Ok(buf))
+        Ok(buf)
     }
 
     fn checksum_error_occurred(&self, size: Block<u32>) {
@@ -198,15 +203,14 @@ impl<T: AsMut<[u8]> + Send + 'static> VdevLeafRead<T> for FailingLeafVdev {
     }
 }
 
+#[async_trait]
 impl VdevLeafWrite for FailingLeafVdev {
-    type WriteRaw = Ready<Result<(), Error>>;
-
-    fn write_raw<T: AsRef<[u8]>>(
+    async fn write_raw<T: AsRef<[u8]> + Send>(
         &self,
         data: T,
         offset: Block<u64>,
         is_repair: bool,
-    ) -> Self::WriteRaw {
+    ) -> Result<(), Error> {
         let size_in_blocks = Block::from_bytes(data.as_ref().len() as u64).as_u64();
         self.inner
             .stats
@@ -223,9 +227,7 @@ impl VdevLeafWrite for FailingLeafVdev {
                     .stats
                     .failed_writes
                     .fetch_add(size_in_blocks, Ordering::Relaxed);
-                return ready(Err(Error::from(ErrorKind::WriteError(
-                    self.inner.id.clone(),
-                ))));
+                return Err(Error::from(ErrorKind::WriteError(self.inner.id.clone())));
             }
             FailureMode::BadData => {
                 bad_data = (0..data.as_ref().len())
@@ -242,7 +244,7 @@ impl VdevLeafWrite for FailingLeafVdev {
                 .repaired
                 .fetch_add(size_in_blocks, Ordering::Relaxed);
         }
-        ready(Ok(()))
+        Ok(())
     }
 
     fn flush(&self) -> Result<(), Error> {

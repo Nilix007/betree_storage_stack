@@ -43,7 +43,7 @@ impl<C: Checksum> StoragePoolLayer for StoragePoolUnit<C> {
         })
     }
 
-    type ReadAsync = Pin<Box<dyn Future<Output = Result<Box<[u8]>, VdevError>> + Send + 'static>>;
+    type ReadAsync = Pin<Box<dyn Future<Output = Result<Box<[u8]>, VdevError>> + Send>>;
 
     fn read_async(
         &self,
@@ -52,15 +52,23 @@ impl<C: Checksum> StoragePoolLayer for StoragePoolUnit<C> {
         checksum: C,
     ) -> Result<Self::ReadAsync, VdevError> {
         self.inner.write_back_queue.lock().wait(&offset)?;
+        let inner = self.inner.clone();
         Ok(Box::pin((&self.inner.pool).spawn_with_handle(
-            self.inner.devices[offset.disk_id()].read(size, offset.block_offset(), checksum),
+            async move {
+                inner.devices[offset.disk_id()]
+                    .read(size, offset.block_offset(), checksum)
+                    .await
+            },
         )?))
     }
 
     fn begin_write(&self, data: Box<[u8]>, offset: DiskOffset) -> Result<(), VdevError> {
-        let write = (&self.inner.pool).spawn_with_handle(
-            self.inner.devices[offset.disk_id()].write(data, offset.block_offset()),
-        )?;
+        let inner = self.inner.clone();
+        let write = (&self.inner.pool).spawn_with_handle(async move {
+            inner.devices[offset.disk_id()]
+                .write(data, offset.block_offset())
+                .await
+        })?;
         self.inner
             .write_back_queue
             .lock()

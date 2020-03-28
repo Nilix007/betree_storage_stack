@@ -6,11 +6,10 @@ use super::{
 };
 use crate::buffer::{new_buffer, SplittableBuffer, SplittableMutBuffer};
 use crate::checksum::Checksum;
-use futures::future::{ready, IntoFuture};
+use async_trait::async_trait;
 use futures::prelude::*;
 use futures::stream::{FuturesOrdered, FuturesUnordered};
 use std::iter::{once, repeat};
-use std::pin::Pin;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -100,24 +99,35 @@ impl<V: Vdev + VdevLeafRead<SplittableMutBuffer> + VdevLeafWrite> Vdev for Parit
     }
 }
 
+#[async_trait]
 impl<
         V: VdevLeafRead<SplittableMutBuffer> + VdevLeafRead<Box<[u8]>> + VdevLeafWrite + 'static,
         C: Checksum,
     > VdevRead<C> for Parity1<V>
 {
-    type Read = Pin<Box<dyn Future<Output = Result<Box<[u8]>, Error>> + Send>>;
-    type Scrub = Pin<Box<dyn Future<Output = Result<ScrubResult, Error>> + Send>>;
-    type ReadRaw = Pin<Box<dyn Future<Output = Result<Vec<Box<[u8]>>, Error>> + Send>>;
-
-    fn read(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Read {
-        Box::pin(read(Arc::clone(&self.inner), size, offset, checksum, false))
+    async fn read(
+        &self,
+        size: Block<u32>,
+        offset: Block<u64>,
+        checksum: C,
+    ) -> Result<Box<[u8]>, Error> {
+        read(Arc::clone(&self.inner), size, offset, checksum, false).await
     }
 
-    fn scrub(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Scrub {
-        Box::pin(read(Arc::clone(&self.inner), size, offset, checksum, true))
+    async fn scrub(
+        &self,
+        size: Block<u32>,
+        offset: Block<u64>,
+        checksum: C,
+    ) -> Result<ScrubResult, Error> {
+        read(Arc::clone(&self.inner), size, offset, checksum, true).await
     }
 
-    fn read_raw(&self, size: Block<u32>, offset: Block<u64>) -> Self::ReadRaw {
+    async fn read_raw(
+        &self,
+        size: Block<u32>,
+        offset: Block<u64>,
+    ) -> Result<Vec<Box<[u8]>>, Error> {
         let inner = Arc::clone(&self.inner);
         let futures: FuturesUnordered<_> = self
             .inner
@@ -128,19 +138,18 @@ impl<
                 disk.read_raw(data, offset).into_future()
             })
             .collect();
-        Box::pin(futures.collect::<Vec<_>>().then(move |result| {
-            let mut v = Vec::new();
-            for r in result {
-                if let Ok(x) = r {
-                    v.push(x);
-                }
+        let result = futures.collect::<Vec<_>>().await;
+        let mut v = Vec::new();
+        for r in result {
+            if let Ok(x) = r {
+                v.push(x);
             }
-            if v.is_empty() {
-                ready(Err(Error::from(ErrorKind::ReadError(inner.id.clone()))))
-            } else {
-                ready(Ok(v))
-            }
-        }))
+        }
+        if v.is_empty() {
+            Err(Error::from(ErrorKind::ReadError(inner.id.clone())))
+        } else {
+            Ok(v)
+        }
     }
 }
 
@@ -394,11 +403,9 @@ where
     }
 }
 
+#[async_trait]
 impl<V: VdevLeafWrite> VdevWrite for Parity1<V> {
-    type Write = UnfailableJoinAllPlusOne<IntoFuture<V::WriteRaw>, FailedWriteUpdateStats<V>>;
-    type WriteRaw = UnfailableJoinAll<IntoFuture<V::WriteRaw>, FailedWriteUpdateStats<V>>;
-
-    fn write(&self, data: Box<[u8]>, offset: Block<u64>) -> Self::Write {
+    async fn write(&self, data: Box<[u8]>, offset: Block<u64>) -> Result<(), Error> {
         assert!(data.len() % BLOCK_SIZE == 0);
         let mut data = SplittableBuffer::new(data);
         let size = Block::from_bytes(data.len() as u32);
@@ -443,6 +450,7 @@ impl<V: VdevLeafWrite> VdevWrite for Parity1<V> {
                 size,
             },
         )
+        .await
     }
 
     fn flush(&self) -> Result<(), Error> {
@@ -452,7 +460,7 @@ impl<V: VdevLeafWrite> VdevWrite for Parity1<V> {
         Ok(())
     }
 
-    fn write_raw(&self, data: Box<[u8]>, offset: Block<u64>) -> Self::WriteRaw {
+    async fn write_raw(&self, data: Box<[u8]>, offset: Block<u64>) -> Result<(), Error> {
         let futures = self
             .inner
             .vdevs
@@ -466,6 +474,7 @@ impl<V: VdevLeafWrite> VdevWrite for Parity1<V> {
                 size: Block::from_bytes(data.len() as u32),
             },
         )
+        .await
     }
 }
 

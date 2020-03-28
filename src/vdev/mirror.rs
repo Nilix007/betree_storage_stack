@@ -6,11 +6,10 @@ use super::{
 };
 use crate::buffer::SplittableBuffer;
 use crate::checksum::Checksum;
-use futures::future::{ready, IntoFuture};
+use async_trait::async_trait;
 use futures::prelude::*;
 use futures::stream::{FuturesOrdered, FuturesUnordered};
 use std::future::Future;
-use std::pin::Pin;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -96,14 +95,16 @@ where
     .into())
 }
 
-impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrite + 'static> VdevRead<C>
-    for Mirror<V>
+#[async_trait]
+impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrite + 'static>
+    VdevRead<C> for Mirror<V>
 {
-    type Read = Pin<Box<dyn Future<Output = Result<Box<[u8]>, Error>> + Send>>;
-    type Scrub = Pin<Box<dyn Future<Output = Result<ScrubResult, Error>> + Send>>;
-    type ReadRaw = Pin<Box<dyn Future<Output = Result<Vec<Box<[u8]>>, Error>> + Send>>;
-
-    fn read(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Read {
+    async fn read(
+        &self,
+        size: Block<u32>,
+        offset: Block<u64>,
+        checksum: C,
+    ) -> Result<Box<[u8]>, Error> {
         let inner = Arc::clone(&self.inner);
         let f = async move {
             // Switch disk every 32 MiB. (which is 2^25 bytes)
@@ -129,10 +130,15 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
                 inner,
             }
         };
-        Box::pin(handle_repair(size, offset, f))
+        handle_repair(size, offset, f).await
     }
 
-    fn scrub(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Scrub {
+    async fn scrub(
+        &self,
+        size: Block<u32>,
+        offset: Block<u64>,
+        checksum: C,
+    ) -> Result<ScrubResult, Error> {
         let inner = Arc::clone(&self.inner);
         let f = async move {
             let futures: FuturesOrdered<_> = inner
@@ -155,10 +161,14 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
                 inner,
             }
         };
-        Box::pin(handle_repair(size, offset, f))
+        handle_repair(size, offset, f).await
     }
 
-    fn read_raw(&self, size: Block<u32>, offset: Block<u64>) -> Self::ReadRaw {
+    async fn read_raw(
+        &self,
+        size: Block<u32>,
+        offset: Block<u64>,
+    ) -> Result<Vec<Box<[u8]>>, Error> {
         let inner = Arc::clone(&self.inner);
         let futures: FuturesUnordered<_> = self
             .inner
@@ -169,57 +179,51 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
                 VdevLeafRead::<Box<[u8]>>::read_raw(disk, data, offset).into_future()
             })
             .collect();
-        Box::pin(futures.collect::<Vec<_>>().then(move |result| {
-            let mut v = Vec::new();
-            for r in result {
-                if let Ok(x) = r {
-                    v.push(x);
-                }
+        let result = futures.collect::<Vec<_>>().await;
+        let mut v = Vec::new();
+        for r in result {
+            if let Ok(x) = r {
+                v.push(x);
             }
-            if v.is_empty() {
-                ready(Err(Error::from(ErrorKind::ReadError(inner.id.clone()))))
-            } else {
-                ready(Ok(v))
-            }
-        }))
+        }
+        if v.is_empty() {
+            Err(Error::from(ErrorKind::ReadError(inner.id.clone())))
+        } else {
+            Ok(v)
+        }
     }
 }
 
+#[async_trait]
 impl<V: VdevLeafWrite + 'static> VdevWrite for Mirror<V> {
-    type Write = Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>;
-    type WriteRaw = UnfailableJoinAll<IntoFuture<V::WriteRaw>, FailedWriteUpdateStats<V>>;
-
-    fn write(&self, data: Box<[u8]>, offset: Block<u64>) -> Self::Write {
+    async fn write(&self, data: Box<[u8]>, offset: Block<u64>) -> Result<(), Error> {
         let inner = Arc::clone(&self.inner);
-        let f = async move {
-            let size = Block::from_bytes(data.len() as u32);
-            let data = SplittableBuffer::new(data);
+        let size = Block::from_bytes(data.len() as u32);
+        let data = SplittableBuffer::new(data);
+        inner
+            .stats
+            .written
+            .fetch_add(size.as_u64(), Ordering::Relaxed);
+        let futures: FuturesUnordered<_> = inner
+            .vdevs
+            .iter()
+            .map(|disk| disk.write_raw(data.clone(), offset, false).into_future())
+            .collect();
+        let results: Vec<_> = futures.collect().await;
+        let total_writes = results.len();
+        let mut failed_writes = 0;
+        for result in results {
+            failed_writes += result.is_err() as usize;
+        }
+        if failed_writes < total_writes {
+            Ok(())
+        } else {
             inner
                 .stats
-                .written
+                .failed_writes
                 .fetch_add(size.as_u64(), Ordering::Relaxed);
-            let futures: FuturesUnordered<_> = inner
-                .vdevs
-                .iter()
-                .map(|disk| disk.write_raw(data.clone(), offset, false).into_future())
-                .collect();
-            let results: Vec<_> = futures.collect().await;
-            let total_writes = results.len();
-            let mut failed_writes = 0;
-            for result in results {
-                failed_writes += result.is_err() as usize;
-            }
-            if failed_writes < total_writes {
-                Ok(())
-            } else {
-                inner
-                    .stats
-                    .failed_writes
-                    .fetch_add(size.as_u64(), Ordering::Relaxed);
-                bail!(ErrorKind::WriteError(inner.id.clone()))
-            }
-        };
-        Box::pin(f)
+            bail!(ErrorKind::WriteError(inner.id.clone()))
+        }
     }
 
     fn flush(&self) -> Result<(), Error> {
@@ -229,7 +233,7 @@ impl<V: VdevLeafWrite + 'static> VdevWrite for Mirror<V> {
         Ok(())
     }
 
-    fn write_raw(&self, data: Box<[u8]>, offset: Block<u64>) -> Self::WriteRaw {
+    async fn write_raw(&self, data: Box<[u8]>, offset: Block<u64>) -> Result<(), Error> {
         let data = SplittableBuffer::new(data);
         let futures = self
             .inner
@@ -244,6 +248,7 @@ impl<V: VdevLeafWrite + 'static> VdevWrite for Mirror<V> {
                 size: Block::from_bytes(data.len() as u32),
             },
         )
+        .await
     }
 }
 
