@@ -101,13 +101,13 @@ impl<V: Vdev + VdevLeafRead<SplittableMutBuffer> + VdevLeafWrite> Vdev for Parit
 }
 
 impl<
-        V: VdevLeafRead<SplittableMutBuffer> + VdevLeafRead<Box<[u8]>> + VdevLeafWrite,
+        V: VdevLeafRead<SplittableMutBuffer> + VdevLeafRead<Box<[u8]>> + VdevLeafWrite + 'static,
         C: Checksum,
     > VdevRead<C> for Parity1<V>
 {
-    type Read = Pin<Box<dyn Future<Output = Result<Box<[u8]>, Error>> + Send + 'static>>;
-    type Scrub = Pin<Box<dyn Future<Output = Result<ScrubResult, Error>> + Send + 'static>>;
-    type ReadRaw = Pin<Box<dyn Future<Output = Result<Vec<Box<[u8]>>, Error>> + Send + 'static>>;
+    type Read = Pin<Box<dyn Future<Output = Result<Box<[u8]>, Error>> + Send>>;
+    type Scrub = Pin<Box<dyn Future<Output = Result<ScrubResult, Error>> + Send>>;
+    type ReadRaw = Pin<Box<dyn Future<Output = Result<Vec<Box<[u8]>>, Error>> + Send>>;
 
     fn read(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Read {
         Box::pin(read(Arc::clone(&self.inner), size, offset, checksum, false))

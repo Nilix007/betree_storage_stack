@@ -66,9 +66,9 @@ fn get_block_device_size(file: &fs::File) -> Result<Block<u64>, io::Error> {
 }
 
 impl<C: Checksum> VdevRead<C> for File {
-    type Read = Pin<Box<dyn Future<Output = Result<Box<[u8]>, Error>> + Send + 'static>>;
-    type Scrub = Pin<Box<dyn Future<Output = Result<ScrubResult, Error>> + Send + 'static>>;
-    type ReadRaw = Pin<Box<dyn Future<Output = Result<Vec<Box<[u8]>>, Error>> + Send + 'static>>;
+    type Read = Pin<Box<dyn Future<Output = Result<Box<[u8]>, Error>> + Send>>;
+    type Scrub = Pin<Box<dyn Future<Output = Result<ScrubResult, Error>> + Send>>;
+    type ReadRaw = Pin<Box<dyn Future<Output = Result<Vec<Box<[u8]>>, Error>> + Send>>;
 
     fn read(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Read {
         self.inner
@@ -169,7 +169,7 @@ impl Vdev for File {
 }
 
 impl<T: AsMut<[u8]> + Send + 'static> VdevLeafRead<T> for File {
-    type ReadRaw = Pin<Box<dyn Future<Output = Result<T, Error>> + Send + 'static>>;
+    type ReadRaw = Pin<Box<dyn Future<Output = Result<T, Error>> + Send>>;
 
     fn read_raw(&self, mut buf: T, offset: Block<u64>) -> Self::ReadRaw {
         let size = Block::from_bytes(buf.as_mut().len() as u32);
@@ -201,7 +201,7 @@ impl<T: AsMut<[u8]> + Send + 'static> VdevLeafRead<T> for File {
 }
 
 impl VdevLeafWrite for File {
-    type WriteRaw = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
+    type WriteRaw = Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>;
 
     fn write_raw<T: AsRef<[u8]> + Send + 'static>(
         &self,

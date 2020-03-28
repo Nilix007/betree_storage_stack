@@ -96,12 +96,12 @@ where
     .into())
 }
 
-impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrite> VdevRead<C>
+impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrite + 'static> VdevRead<C>
     for Mirror<V>
 {
-    type Read = Pin<Box<dyn Future<Output = Result<Box<[u8]>, Error>> + Send + 'static>>;
-    type Scrub = Pin<Box<dyn Future<Output = Result<ScrubResult, Error>> + Send + 'static>>;
-    type ReadRaw = Pin<Box<dyn Future<Output = Result<Vec<Box<[u8]>>, Error>> + Send + 'static>>;
+    type Read = Pin<Box<dyn Future<Output = Result<Box<[u8]>, Error>> + Send>>;
+    type Scrub = Pin<Box<dyn Future<Output = Result<ScrubResult, Error>> + Send>>;
+    type ReadRaw = Pin<Box<dyn Future<Output = Result<Vec<Box<[u8]>>, Error>> + Send>>;
 
     fn read(&self, size: Block<u32>, offset: Block<u64>, checksum: C) -> Self::Read {
         let inner = Arc::clone(&self.inner);
@@ -185,8 +185,8 @@ impl<C: Checksum, V: Vdev + VdevRead<C> + VdevLeafRead<Box<[u8]>> + VdevLeafWrit
     }
 }
 
-impl<V: VdevLeafWrite> VdevWrite for Mirror<V> {
-    type Write = Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'static>>;
+impl<V: VdevLeafWrite + 'static> VdevWrite for Mirror<V> {
+    type Write = Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>;
     type WriteRaw = UnfailableJoinAll<IntoFuture<V::WriteRaw>, FailedWriteUpdateStats<V>>;
 
     fn write(&self, data: Box<[u8]>, offset: Block<u64>) -> Self::Write {
