@@ -1,6 +1,3 @@
-#![feature(never_type)]
-#![feature(integer_atomics)]
-
 extern crate betree_storage_stack;
 extern crate bincode;
 extern crate byteorder;

@@ -1,14 +1,8 @@
 //! Storage stack with key-value store interface on top of B<sup>e</sup>-Trees.
 #![warn(missing_docs)]
-#![feature(exhaustive_patterns)]
-#![feature(integer_atomics)]
 #![feature(unboxed_closures)]
-#![feature(generator_trait, generators)]
-#![feature(specialization)]
 #![feature(ptr_internals)]
 #![feature(never_type)]
-#![feature(gen_future)]
-#![feature(arbitrary_self_types)]
 #![cfg_attr(test, feature(test))]
 
 extern crate bincode;
