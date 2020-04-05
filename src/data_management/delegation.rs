@@ -74,10 +74,10 @@ where
     T: Deref,
     T::Target: Dml,
 {
-    fn write_back<F>(&self, acquire_or_lock: F) -> Result<Self::ObjectPointer, Error>
+    fn write_back<F, G>(&self, acquire_or_lock: F) -> Result<Self::ObjectPointer, Error>
     where
-        F: FnMut<()>,
-        F::Output: DerefMut<Target = Self::ObjectRef>,
+        F: FnMut() -> G,
+        G: DerefMut<Target = Self::ObjectRef>,
     {
         (**self).write_back(acquire_or_lock)
     }

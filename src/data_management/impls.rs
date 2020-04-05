@@ -777,10 +777,10 @@ where
     I: PodType,
     G: PodType,
 {
-    fn write_back<F>(&self, mut acquire_or_lock: F) -> Result<Self::ObjectPointer, Error>
+    fn write_back<F, FO>(&self, mut acquire_or_lock: F) -> Result<Self::ObjectPointer, Error>
     where
-        F: FnMut<()>,
-        F::Output: DerefMut<Target = Self::ObjectRef>,
+        F: FnMut() -> FO,
+        FO: DerefMut<Target = Self::ObjectRef>,
     {
         let (object, mid) = loop {
             let mut or = acquire_or_lock();

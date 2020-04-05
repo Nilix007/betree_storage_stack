@@ -198,10 +198,10 @@ pub trait Dml: HandlerDml {
     /// Writes back an object and all its dependencies.
     /// `acquire_or_lock` shall return a lock guard
     /// that provides mutable access to the object reference.
-    fn write_back<F>(&self, acquire_or_lock: F) -> Result<Self::ObjectPointer, Error>
+    fn write_back<F, G>(&self, acquire_or_lock: F) -> Result<Self::ObjectPointer, Error>
     where
-        F: FnMut<()>,
-        F::Output: DerefMut<Target = Self::ObjectRef>;
+        F: FnMut() -> G,
+        G: DerefMut<Target = Self::ObjectRef>;
 
     /// Prefetch session type.
     type Prefetch;
