@@ -582,7 +582,7 @@ where
                     let object = entry.get_mut();
                     let mut modified_children = false;
                     object
-                        .for_each_child::<!, _>(|or| loop {
+                        .for_each_child::<(), _>(|or| loop {
                             let mid = match *or {
                                 ObjectRef::Unmodified(_) => break Ok(()),
                                 ObjectRef::InWriteback(mid) | ObjectRef::Modified(mid) => mid,

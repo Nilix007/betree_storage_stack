@@ -14,12 +14,6 @@ error_chain! {
     }
 }
 
-impl From<!> for Error {
-    fn from(_: !) -> Error {
-        unreachable!()
-    }
-}
-
 impl From<::futures::task::SpawnError> for Error {
     fn from(e: ::futures::task::SpawnError) -> Error {
         Error::from(ErrorKind::SpawnError(format!("{:?}", e)))
