@@ -1,16 +1,19 @@
 use std::marker::PhantomData;
-use std::ptr::Unique;
+use std::ptr::NonNull;
 
 struct ClockEntry<T> {
     value: T,
-    next: Unique<ClockEntry<T>>,
+    next: NonNull<ClockEntry<T>>,
 }
 
 /// A simple clock, i.e. a circular singly linked list.
 pub struct Clock<T> {
     /// Contains the pointer to the current tail of the circular list.
-    tail: Option<Unique<ClockEntry<T>>>,
+    tail: Option<NonNull<ClockEntry<T>>>,
 }
+
+unsafe impl<T: Sync> Sync for Clock<T> {}
+unsafe impl<T: Send> Send for Clock<T> {}
 
 impl<T> Default for Clock<T> {
     fn default() -> Self {
@@ -28,7 +31,7 @@ impl<T> Clock<T> {
     pub fn pop_front(&mut self) -> Option<T> {
         self.tail.map(|mut tail| {
             let head = unsafe { tail.as_ref() }.next;
-            if head.as_ptr() != tail.as_ptr() {
+            if head != tail {
                 unsafe { tail.as_mut() }.next = unsafe { head.as_ref() }.next;
             } else {
                 self.tail = None;
@@ -39,9 +42,10 @@ impl<T> Clock<T> {
 
     /// Peeks at the element at the head of the list.
     pub fn peek_front(&self) -> Option<&T> {
-        self.tail
-            .map(|tail| unsafe { tail.as_ref() }.next)
-            .map(|head| &unsafe { &*head.as_ptr() }.value)
+        let tail = self.tail?;
+        let head = unsafe { tail.as_ref() }.next;
+        let value = &unsafe { &*head.as_ptr() }.value;
+        Some(value)
     }
 
     /// Increments the *hand* so that the head of the list becomes the tail.
@@ -55,10 +59,10 @@ impl<T> Clock<T> {
     pub fn push_back(&mut self, value: T) {
         let entry = Box::new(ClockEntry {
             value,
-            next: Unique::empty(),
+            next: NonNull::dangling(),
         });
         let entry = Box::into_raw(entry);
-        let mut entry = Unique::new(entry).unwrap();
+        let mut entry = NonNull::new(entry).unwrap();
 
         if let Some(ref mut tail) = self.tail {
             unsafe { entry.as_mut() }.next = unsafe { tail.as_ref() }.next;
@@ -80,7 +84,7 @@ impl<T> Clock<T> {
         } else {
             ClockIter {
                 current: None,
-                last: Unique::empty(),
+                last: NonNull::dangling(),
                 marker: PhantomData,
             }
         }
@@ -98,7 +102,7 @@ impl<T> Clock<T> {
         } else {
             ClockIterMut {
                 current: None,
-                last: Unique::empty(),
+                last: NonNull::dangling(),
                 marker: PhantomData,
             }
         }
@@ -117,7 +121,7 @@ impl<T> Clock<T> {
             let mut last = tail;
             let mut current = tail.as_ref().next;
 
-            while tail.as_ptr() != current.as_ptr() {
+            while tail != current {
                 if f(&current.as_ref().value) {
                     // Retain element
                     last = current;
@@ -133,7 +137,7 @@ impl<T> Clock<T> {
 
             if !f(&current.as_ref().value) {
                 // Remove tail element of list.
-                if last.as_ptr() == current.as_ptr() {
+                if last == current {
                     // List contains only one element
                     self.tail = None;
                 } else {
@@ -154,8 +158,8 @@ impl<T> Drop for Clock<T> {
 
 /// Immutable clock iterator
 pub struct ClockIter<'a, T: 'a> {
-    current: Option<Unique<ClockEntry<T>>>,
-    last: Unique<ClockEntry<T>>,
+    current: Option<NonNull<ClockEntry<T>>>,
+    last: NonNull<ClockEntry<T>>,
     marker: PhantomData<&'a T>,
 }
 
@@ -165,7 +169,7 @@ impl<'a, T> Iterator for ClockIter<'a, T> {
     fn next(&mut self) -> Option<Self::Item> {
         self.current.take().map(|current| {
             let entry = unsafe { &*current.as_ptr() };
-            self.current = if current.as_ptr() == self.last.as_ptr() {
+            self.current = if current == self.last {
                 None
             } else {
                 Some(entry.next)
@@ -177,8 +181,8 @@ impl<'a, T> Iterator for ClockIter<'a, T> {
 
 /// Mutable clock iterator
 pub struct ClockIterMut<'a, T: 'a> {
-    current: Option<Unique<ClockEntry<T>>>,
-    last: Unique<ClockEntry<T>>,
+    current: Option<NonNull<ClockEntry<T>>>,
+    last: NonNull<ClockEntry<T>>,
     marker: PhantomData<&'a mut T>,
 }
 
@@ -188,7 +192,7 @@ impl<'a, T> Iterator for ClockIterMut<'a, T> {
     fn next(&mut self) -> Option<Self::Item> {
         self.current.take().map(|current| {
             let entry = unsafe { &mut *current.as_ptr() };
-            self.current = if current.as_ptr() == self.last.as_ptr() {
+            self.current = if current == self.last {
                 None
             } else {
                 Some(entry.next)

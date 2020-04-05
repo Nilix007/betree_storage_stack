@@ -1,6 +1,5 @@
 //! Storage stack with key-value store interface on top of B<sup>e</sup>-Trees.
 #![warn(missing_docs)]
-#![feature(ptr_internals)]
 #![feature(never_type)]
 #![cfg_attr(test, feature(test))]
 
