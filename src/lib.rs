@@ -1,6 +1,5 @@
 //! Storage stack with key-value store interface on top of B<sup>e</sup>-Trees.
 #![warn(missing_docs)]
-#![cfg_attr(test, feature(test))]
 
 extern crate bincode;
 extern crate byteorder;
@@ -28,9 +27,10 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate stable_deref_trait;
-#[cfg(test)]
-extern crate test;
 extern crate twox_hash;
+#[cfg(test)]
+#[macro_use]
+extern crate bencher;
 
 pub mod allocator;
 pub mod atomic_option;

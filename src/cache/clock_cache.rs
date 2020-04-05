@@ -348,9 +348,8 @@ impl<K: Clone + Eq + Hash + Sync + Send, V: Sync + Send + 'static> Cache for Clo
 #[cfg(test)]
 mod tests {
     use super::{Cache, ClockCache};
-    use test::{black_box, Bencher};
+    use bencher::{black_box, Bencher};
 
-    #[bench]
     fn get_and_pin(b: &mut Bencher) {
         let mut c = ClockCache::new(5);
         c.insert(5, 5, 1);
@@ -358,4 +357,7 @@ mod tests {
             black_box(c.get(&5, true));
         });
     }
+
+    benchmark_group!(benches, get_and_pin);
+    benchmark_main!(benches);
 }
